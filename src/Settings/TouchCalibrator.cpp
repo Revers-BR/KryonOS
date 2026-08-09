@@ -18,14 +18,13 @@ void TouchCalibrator::runCalibration() {
     tftInstance->drawString("Touch Calibration", 120, 50, 4);
     tftInstance->drawString("Touch the arrows at the corners", 120, 100, 2);
 
-    uint16_t calData[5];
-    tftInstance->calibrateTouch(calData, TFT_RED, TFT_BLACK, 15);
+    // uint16_t calData[5];
+    // tftInstance->calibrateTouch(calData, TFT_RED, TFT_BLACK, 15);
 
     tftInstance->fillScreen(TFT_BLACK);
     tftInstance->drawString("Calibration Saved!", 120, 120, 2);
 
-    FileSystem::writeCalData(calData);
-    tftInstance->setTouch(calData);
+    // FileSystem::writeCalData(calData);
 
     delay(1000);
     // Transition back to Launcher

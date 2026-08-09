@@ -1,9 +1,11 @@
 #include "HarixKernel.h"
 #include "../../Runtime/JSBindings.h"
 #include "../../File System/FileSystem.h"
+#include <Touch/TouchScreen.h>
 
 duk_context *HarixKernel::ctx = nullptr;
 TFT_eSPI *HarixKernel::tftInstance = nullptr;
+TouchScreen *HarixKernel::touchInstance  = nullptr;
 
 static void *my_alloc(void *udata, duk_size_t size) {
     if (size == 0) return nullptr;
@@ -53,7 +55,7 @@ static void my_fatal(void *udata, const char *msg) {
         // Wait for user to touch the X before rebooting!
         uint16_t tx, ty;
         while(true) {
-            if (HarixKernel::tftInstance->getTouch(&tx, &ty)) {
+            if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
                 if (tx >= 200 && ty <= 40) break;
             }
             delay(50);
@@ -66,8 +68,9 @@ static void my_fatal(void *udata, const char *msg) {
     ESP.restart(); // Reboot when they close it
 }
 
-void HarixKernel::init(TFT_eSPI *tft) {
+void HarixKernel::init(TFT_eSPI *tft, TouchScreen *touch) {
     tftInstance = tft;
+    touchInstance = touch;
     // Duktape heap is no longer initialized here to save 60-80KB of RAM for the WebServer/WiFi.
     // It will be allocated on-demand in runFile() and checkSyntax().
     Serial.println("HarixKernel initialized successfully.");
@@ -107,7 +110,7 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
                 
                 uint16_t tx, ty;
                 while(true) {
-                    if (tftInstance->getTouch(&tx, &ty)) {
+                    if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
                         if (tx >= 200 && ty <= 40) break;
                     }
                     delay(50);
@@ -146,7 +149,7 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
             
             uint16_t tx, ty;
             while(true) {
-                if (tftInstance->getTouch(&tx, &ty)) {
+                if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
                     if (tx >= 200 && ty <= 40) break;
                 }
                 delay(50);
@@ -248,7 +251,7 @@ void HarixKernel::runFile(const char* filePath) {
             
             uint16_t tx, ty;
             while(true) {
-                if (tftInstance->getTouch(&tx, &ty)) {
+                if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
                     if (tx >= 200 && ty <= 40) break;
                 }
                 delay(50);
@@ -257,7 +260,7 @@ void HarixKernel::runFile(const char* filePath) {
         return; // Soft exit back to OS
     }
 
-    JSBindings::init(ctx, tftInstance);
+    JSBindings::init(ctx, tftInstance, touchInstance);
     
     {
         String content = FileSystem::readTextFile(filePath);

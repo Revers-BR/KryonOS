@@ -1,6 +1,7 @@
 #include "MyKeyboard.h"
 
 TFT_eSPI *MyKeyboard::tftInstance = nullptr;
+TouchScreen *MyKeyboard::touchInstance = nullptr;
 
 const int kw = 12; // keyboard width
 const int kh = 4;  // keyboard height
@@ -11,8 +12,9 @@ char qwerty_keyset[kh][kw][2] = {
     {{'\\', '|'}, {'z', 'Z'}, {'x', 'X'}, {'c', 'C'}, {'v', 'V'}, {'b', 'B'}, {'n', 'N'}, {'m', 'M'}, {',', '<'}, {'.', '>'}, {'/', '?'}, {' ', ' '}}
 };
 
-void MyKeyboard::init(TFT_eSPI *tft) {
+void MyKeyboard::init(TFT_eSPI *tft, TouchScreen *touch) {
     tftInstance = tft;
+    touchInstance = touch;
 }
 
 String MyKeyboard::getString(String initialText, String promptMsg, int maxLen) {
@@ -27,7 +29,7 @@ String MyKeyboard::getString(String initialText, String promptMsg, int maxLen) {
 
     while (!done) {
         uint16_t x, y;
-        if (tftInstance->getTouch(&x, &y)) {
+        if (MyKeyboard::touchInstance->getTouch(&x, &y)) {
             handleTouch(x, y, currentText, caps, done);
             if (!done) {
                 drawKeyboard(currentText, promptMsg, caps, -1, -1);

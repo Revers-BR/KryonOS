@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include <SPI.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
+#include "Touch/TouchScreen.h"
 #include "File System/FileSystem.h"
 #include "Launcher/LauncherUI.h"
 #include "Settings/SettingsUI.h"
@@ -33,11 +33,27 @@
 #define STATE_APP_STORE 13
 #define STATE_HELP_CENTER 14
 
+
 int currentState = STATE_LAUNCHER;
 TFT_eSPI tft = TFT_eSPI();
+TouchScreen touch;
 
 void setup() {
     Serial.begin(115200);
+
+#if defined(PWR_ON_PIN) | defined(PWR_EN_PIN)
+
+  pinMode(PWR_ON_PIN, OUTPUT);
+  digitalWrite(PWR_ON_PIN, HIGH);
+
+  delay(10);
+  Serial.println(F("Turn on the main power"));
+
+  Serial.println(F("Power on peripherals, such as the LCD backlight"));
+  pinMode(PWR_EN_PIN, OUTPUT);
+  digitalWrite(PWR_EN_PIN, HIGH);
+
+#endif
     delay(1000);
     Serial.println("\n--- KryonOS Booting ---");
 
@@ -48,6 +64,8 @@ void setup() {
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
     tft.drawString("Booting KryonOS...", 120, 160, 2);
+
+    touch.init(&tft);
 
     // Initialize File Systems (LittleFS & SD)
     if (!FileSystem::init()) {
@@ -77,16 +95,16 @@ void setup() {
 
     // Initialize JS Runtime
     Serial.println("DEBUG: Starting HarixKernel...");
-    HarixKernel::init(&tft);
+    HarixKernel::init(&tft, &touch);
     Serial.println("HarixKernel initialized successfully.");
     Serial.printf("DEBUG: Free heap after Kernel: %u\n", ESP.getFreeHeap());
 
     // Init UI Components
     LauncherUI::init(&tft);
-    SettingsUI::init(&tft);
+    SettingsUI::init(&tft, &touch);
     InstallerUI::init(&tft);
     TouchCalibrator::init(&tft);
-    MyKeyboard::init(&tft);
+    MyKeyboard::init(&tft, &touch);
     WebServerAppUI::init(&tft);
     AppStoreUI::init(&tft);
     HelpCenterUI::init(&tft);
@@ -105,7 +123,7 @@ void setup() {
     uint16_t calData[5];
     if (FileSystem::readCalData(calData)) {
         Serial.println("Calibration data found and loaded.");
-        tft.setTouch(calData);
+        // tft.setTouch(calData);
         currentState = STATE_LAUNCHER;
     } else {
         Serial.println("No calibration data. Entering calibrator.");
@@ -167,15 +185,18 @@ void loop() {
     }
 
     // Basic Touch handling loop
-    uint16_t x, y;
-    bool touched = tft.getTouch(&x, &y);
+    bool touched = touch.isTouched();
     
     static unsigned long lastTouchTime = 0;
     static bool wasTouched = false;
-
+        
     if (touched) {
         bool processNow = false;
         
+        uint16_t x, y;
+        
+        touch.getTouch(&x, &y);
+
         if (!wasTouched) {
             processNow = true;
             lastTouchTime = millis();

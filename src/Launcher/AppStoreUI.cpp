@@ -70,69 +70,104 @@ bool AppStoreUI::downloadFile(const String& url, const String& destPath, const S
         dialogMessage = "Please turn on WiFi first\nto access the app store.";
         return false;
     }
-    
+
     HTTPClient http;
+    // Permite seguir redirecionamentos (301/302) comuns em CDNs e GitHub
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(10000); // Timeout da conexão HTTP inicial (10s)
     http.begin(url);
-    
-    // Draw initial progress UI
+
+    // Redesenha UI
     tftInstance->fillScreen(TFT_BLACK);
     tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
     tftInstance->setTextDatum(MC_DATUM);
     tftInstance->drawString(loadingMsg, 120, 140, 2);
     tftInstance->drawRect(30, 160, 180, 20, TFT_WHITE);
-    
+
     int httpCode = http.GET();
-    if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
-        int totalLen = http.getSize();
-        int downloaded = 0;
-        
-        WiFiClient *stream = http.getStreamPtr();
-        fs::FS* targetFS = &LittleFS;
-        String relPath = destPath;
-        if (destPath.startsWith("/sd/")) {
-            targetFS = &SD;
-            relPath = destPath.substring(3);
-        } else if (destPath.startsWith("/local/")) {
-            targetFS = &LittleFS;
-            relPath = destPath.substring(6);
-        }
-        
-        File file = targetFS->open(relPath, "w");
-        if (!file) {
-            dialogMessage = "Error: FS Write Failed!";
-            http.end();
-            return false;
-        }
-        
-        uint8_t buff[512] = { 0 };
-        int len;
-        
-        while (http.connected() && (totalLen == -1 || downloaded < totalLen)) {
-            size_t size = stream->available();
-            if (size) {
-                int readLen = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
-                if (readLen > 0) {
-                    file.write(buff, readLen);
-                    downloaded += readLen;
-                    
-                    // Update Progress Bar
-                    if (totalLen > 0) {
-                        int progressWidth = map(downloaded, 0, totalLen, 0, 176);
-                        tftInstance->fillRect(32, 162, progressWidth, 16, TFT_GREEN);
-                    }
-                }
-            } else {
-                delay(1);
-            }
-        }
-        file.close();
-        http.end();
-        return true;
-    } else {
+    if (httpCode != HTTP_CODE_OK) {
         dialogMessage = "Error HTTP " + String(httpCode);
         http.end();
         return false;
     }
+
+    int totalLen = http.getSize();
+    int downloaded = 0;
+
+    WiFiClient *stream = http.getStreamPtr();
+    fs::FS* targetFS = &LittleFS;
+    String relPath = destPath;
+
+    if (destPath.startsWith("/sd/")) {
+    #ifdef SD_CS_PIN
+        targetFS = &SD;
+    #else
+        targetFS = &SD_MMC;
+    #endif
+        relPath = destPath.substring(3);
+    } else if (destPath.startsWith("/local/")) {
+        targetFS = &LittleFS;
+        relPath = destPath.substring(6);
+    }
+
+    File file = targetFS->open(relPath, "w");
+    if (!file) {
+        dialogMessage = "Error: FS Write Failed!";
+        http.end();
+        return false;
+    }
+
+    uint8_t buff[512];
+    unsigned long lastDataTime = millis();
+    const unsigned long STREAM_TIMEOUT_MS = 5000; // 5 segundos de silêncio cancelam o download
+
+    while (http.connected() && (totalLen == -1 || downloaded < totalLen)) {
+        size_t size = stream->available();
+
+        if (size > 0) {
+            int readSize = (size > sizeof(buff)) ? sizeof(buff) : size;
+            int readLen = stream->readBytes(buff, readSize);
+
+            if (readLen > 0) {
+                size_t written = file.write(buff, readLen);
+                if (written != (size_t)readLen) {
+                    dialogMessage = "Error: Storage Full/Write Error!";
+                    file.close();
+                    http.end();
+                    return false;
+                }
+
+                downloaded += readLen;
+                lastDataTime = millis(); // Reinicia temporizador de atividade
+
+                // Atualiza barra de progresso
+                if (totalLen > 0) {
+                    int progressWidth = map(downloaded, 0, totalLen, 0, 176);
+                    tftInstance->fillRect(32, 162, progressWidth, 16, TFT_GREEN);
+                }
+            }
+        } else {
+            // Se ficar sem receber dados por mais de 5s, interrompe
+            if (millis() - lastDataTime > STREAM_TIMEOUT_MS) {
+                dialogMessage = "Error: Download Timeout!";
+                file.close();
+                http.end();
+                return false;
+            }
+            delay(1);
+        }
+    }
+
+    file.close();
+    http.end();
+
+    // Valida se o download baixou a totalidade dos dados declarados
+    if (totalLen > 0 && downloaded < totalLen) {
+        dialogMessage = "Error: Incomplete Download!";
+        return false;
+    }
+
+    return true;
 }
 
 bool AppStoreUI::fetchCategories() {
@@ -267,7 +302,11 @@ bool AppStoreUI::checkUpdates() {
     }
     
     for (int i=0; i<2; i++) {
+    #ifdef SD_CS_PIN
         fs::FS* targetFS = (i == 0) ? (fs::FS*)&SD : (fs::FS*)&LittleFS;
+    #else
+        fs::FS* targetFS = (i == 0) ? (fs::FS*)&SD_MMC : (fs::FS*)&LittleFS;
+    #endif
         if (!targetFS->exists("/apps")) continue;
         
         File root = targetFS->open("/apps");
@@ -366,22 +405,31 @@ bool AppStoreUI::checkUpdates() {
 void AppStoreUI::performInstall(int appIdx) {
     AppStoreItem& app = currentApps[appIdx];
     
-    String destFolder = "/local/tmp_download/";
-    if (FileSystem::exists(destFolder.c_str())) {
-        FileSystem::deleteFile((destFolder + "app.json").c_str());
-        FileSystem::deleteFile((destFolder + "main.js").c_str());
-        FileSystem::rmdir(destFolder.c_str());
-    }
-    FileSystem::mkdir(destFolder.c_str());
+    // Removida a barra final do caminho do diretório
+    String destFolder = "/local/tmp_download";
+    String metaPath = destFolder + "/app.json";
+    String appPath = destFolder + "/main.js";
     
-    bool metaOk = downloadFile(app.metaUrl, destFolder + "app.json", "Downloading Meta...");
+    // Limpa o diretório antigo caso ele exista
+    if (FileSystem::exists(destFolder.c_str())) {
+        FileSystem::deleteFile(metaPath.c_str());
+        FileSystem::deleteFile(appPath.c_str());
+        FileSystem::rmdir(destFolder.c_str()); // Sem barra final no rmdir
+    }
+    
+    // Cria o diretório (sem barra no final)
+    if (!FileSystem::mkdir(destFolder.c_str())) {
+        return; // Falha na criação do diretório
+    }
+    
+    bool metaOk = downloadFile(app.metaUrl, metaPath, "Downloading Meta...");
     if (!metaOk) return;
     
-    bool appOk = downloadFile(app.appUrl, destFolder + "main.js", "Downloading App...");
+    bool appOk = downloadFile(app.appUrl, appPath, "Downloading App...");
     if (!appOk) {
-        // Cleanup if failed
-        FileSystem::deleteFile((destFolder + "app.json").c_str());
-        FileSystem::deleteFile((destFolder + "main.js").c_str());
+        // Limpeza em caso de falha
+        FileSystem::deleteFile(metaPath.c_str());
+        FileSystem::deleteFile(appPath.c_str());
         FileSystem::rmdir(destFolder.c_str());
         return;
     }

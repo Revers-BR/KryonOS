@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KryonOS ESP32 JS Emulator & IDE (240x320)</title>
+  
+  <!-- CodeMirror CSS (Destaque de Sintaxe & Autocomplete) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css">
+
+  <style>
+    :root {
+      --bg-dark: #121318;
+      --panel-bg: #1e1f29;
+      --panel-border: #2d303e;
+      --accent-color: #00e676;
+      --accent-warn: #ffb74d;
+      --accent-danger: #ff5252;
+      --text-main: #e1e3ed;
+      --text-muted: #8b92a8;
+      --editor-bg: #282a36;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header Bar */
+    header {
+      background-color: var(--panel-bg);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand { font-weight: bold; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+    .badge { background: #3d425a; color: var(--accent-color); font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+    .controls { display: flex; gap: 10px; align-items: center; }
+
+    button {
+      background: #2a2d3d;
+      color: var(--text-main);
+      border: 1px solid var(--panel-border);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    button:hover { background: #383c52; }
+    button.btn-run { background: #1b5e20; color: #a7f3d0; border-color: #2e7d32; }
+    button.btn-run:hover { background: #2e7d32; }
+    button.btn-stop { background: #b71c1c; color: #fecaca; border-color: #c62828; }
+    button.btn-stop:hover { background: #c62828; }
+
+    select {
+      background: #2a2d3d;
+      color: var(--text-main);
+      border: 1px solid var(--panel-border);
+      padding: 6px 10px;
+      border-radius: 4px;
+      outline: none;
+    }
+
+    /* Layout Principal */
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 55px);
+      overflow: hidden;
+    }
+
+    /* Esquerda: IDE Editor com CodeMirror */
+    .ide-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--panel-border);
+      background: var(--editor-bg);
+      overflow: hidden;
+      position: relative;
+    }
+    .pane-header {
+      background: var(--panel-bg);
+      padding: 8px 15px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--panel-border);
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    /* CodeMirror Full-Height Customization */
+    .CodeMirror {
+      flex: 1;
+      height: 100% !important;
+      font-family: 'Consolas', 'Fira Code', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* Popover para Assinatura de Métodos */
+    #methodPopover {
+      position: absolute;
+      background: #1e1f29;
+      color: #ffb74d;
+      border: 1px solid #44475a;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      display: none;
+      pointer-events: none;
+    }
+
+    .linter-warnings {
+      background: rgba(255, 183, 77, 0.1);
+      border-top: 1px solid var(--accent-warn);
+      color: var(--accent-warn);
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      max-height: 80px;
+      overflow-y: auto;
+      font-family: monospace;
+      display: none;
+    }
+
+    /* Centro: Hardware Emulator */
+    .hardware-pane {
+      width: 360px;
+      background: #15161c;
+      border-right: 1px solid var(--panel-border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 15px;
+      overflow-y: auto;
+    }
+
+    .esp32-board {
+      background: #004d40;
+      border-radius: 12px;
+      padding: 20px 15px 15px 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      border: 2px solid #00695c;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    .board-title { color: #80cbc4; font-size: 0.7rem; font-weight: bold; letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase; }
+
+    /* Screen Hardware */
+    .screen-wrapper {
+      position: relative;
+      background: #000;
+      padding: 8px;
+      border-radius: 6px;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+      border: 2px solid #26a69a;
+    }
+    canvas#tftDisplay {
+      image-rendering: pixelated;
+      background-color: #000;
+      display: block;
+      cursor: crosshair;
+    }
+    .exit-trigger-zone {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 40px;
+      height: 40px;
+      border: 1px dashed rgba(255,82,82,0.4);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: rgba(255,82,82,0.6);
+    }
+
+    .board-status {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      margin-top: 12px;
+      font-size: 0.75rem;
+      color: #b2dfdb;
+    }
+    .led-indicator { width: 8px; height: 8px; border-radius: 50%; background: #333; display: inline-block; margin-right: 4px; }
+    .led-indicator.active { background: #00e676; box-shadow: 0 0 8px #00e676; }
+    .led-indicator.power { background: #ff5252; box-shadow: 0 0 6px #ff5252; }
+
+    /* Hardware Dashboard Controls */
+    .hw-controls {
+      width: 100%;
+      margin-top: 15px;
+      background: var(--panel-bg);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--panel-border);
+    }
+    .hw-title { font-size: 0.8rem; font-weight: bold; color: var(--text-muted); margin-bottom: 8px; }
+    .pin-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.8rem; }
+    .pin-row input[type="range"] { width: 100px; }
+
+    /* Direita: Console & Filesystem */
+    .sidebar-pane {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel-bg);
+    }
+    .console-output {
+      flex: 1;
+      background: #0d0e12;
+      color: #a9b7c6;
+      font-family: 'Consolas', monospace;
+      font-size: 11px;
+      padding: 10px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .fs-tree {
+      height: 180px;
+      background: #15161c;
+      padding: 10px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .fs-item { padding: 2px 4px; cursor: pointer; border-radius: 3px; }
+    .fs-item:hover { background: #2a2d3d; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      ⚡ KryonOS JS IDE
+      <span class="badge">ESP32 240x320 | Duktape v1.0</span>
+    </div>
+    <div class="controls">
+      <label style="font-size:0.8rem; color:var(--text-muted);">Exemplo API:</label>
+      <select id="exampleSelector" onchange="loadSelectedExample()">
+        <option value="dashboard">0. Modern UI Dashboard</option>
+        <option value="graphics">1. Display & Desenho (Graphics API)</option>
+        <option value="fs">2. Sistema de Arquivos (FS API)</option>
+        <option value="gpio">3. Hardware & Pinos (GPIO API)</option>
+        <option value="system">4. Sistema & OS (System API)</option>
+        <option value="sprites">5. Buffering & Sprites (Sprite API)</option>
+      </select>
+      <button class="btn-run" onclick="runScript()">▶ Executar</button>
+      <button class="btn-stop" onclick="stopScript('Execução interrompida pelo usuário.')">⏹ Parar</button>
+      <button onclick="rebootSystem()">🔄 Reboot OS</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="main-container">
+
+    <!-- IDE Code Editor -->
+    <div class="ide-pane">
+      <div class="pane-header">
+        <span>EDITOR JAVASCRIPT (ES5.1 / DUKTAPE)</span>
+        <span id="scriptStatus" style="color:var(--accent-color);">Pronto</span>
+      </div>
+      <textarea id="codeEditor"></textarea>
+      <!-- Popover de Assinatura de Método -->
+      <div id="methodPopover"></div>
+      <div id="linterBox" class="linter-warnings"></div>
+    </div>
+
+    <!-- Hardware Emulator -->
+    <div class="hardware-pane">
+      <div class="esp32-board">
+        <div class="board-title">KryonOS ESP32 Hardware Kit</div>
+        <div class="screen-wrapper">
+          <canvas id="tftDisplay" width="240" height="320"></canvas>
+          <div class="exit-trigger-zone" title="Área de Saída de Emergência (x>=200, y<=40)">EXIT</div>
+        </div>
+        <div class="board-status">
+          <span><span class="led-indicator power"></span>PWR</span>
+          <span><span id="ledWifi" class="led-indicator active"></span>WiFi</span>
+          <span><span id="ledPin2" class="led-indicator"></span>GPIO2</span>
+          <span id="hudTouch">Touch: OFF</span>
+        </div>
+      </div>
+
+      <!-- Hardware Dashboard Controls -->
+      <div class="hw-controls">
+        <div class="hw-title">PAINEL DE HARDWARE SIMULADO</div>
+        <div class="pin-row">
+          <span>GPIO 4 (ADC Analog)</span>
+          <input type="range" id="pin4Analog" min="0" max="4095" value="1850" oninput="updateHwState()">
+          <span id="valPin4">1850</span>
+        </div>
+        <div class="pin-row">
+          <span>GPIO 5 (Digital Switch)</span>
+          <input type="checkbox" id="pin5Digital" onchange="updateHwState()">
+        </div>
+        <div class="pin-row">
+          <span>WiFi Conectado</span>
+          <input type="checkbox" id="wifiToggle" checked onchange="updateHwState()">
+        </div>
+        <div class="pin-row">
+          <span>Temp. Core CPU (°C)</span>
+          <span id="cpuTempReadout">38.5 °C</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Serial Monitor & Filesystem -->
+    <div class="sidebar-pane">
+      <div class="pane-header">MONITOR SERIAL (115200 BAUD)</div>
+      <div id="consoleOutput" class="console-output"></div>
+      
+      <div class="pane-header" style="border-top:1px solid var(--panel-border);">SISTEMA DE ARQUIVOS (FS)</div>
+      <div id="fsTree" class="fs-tree"></div>
+    </div>
+
+  </div>
+
+  <!-- CodeMirror JS Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/javascript-hint.min.js"></script>
+
+  <script>
+    // =========================================================================
+    // KRYONOS ENGINE ARCHITECTURE & HARDWARE EMULATION
+    // =========================================================================
+
+    var TFT_WIDTH = 240;
+    var TFT_HEIGHT = 320;
+
+    var canvas = document.getElementById('tftDisplay');
+    var ctx = canvas.getContext('2d');
+
+    var bootTime = Date.now();
+    var isRunning = false;
+    var scriptExecutionId = 0;
+    var autoRunTimer = null;
+    var textFgColor = 0xFFFF;
+    var textBgColor = 0x0000;
+    var textSize = 1;
+    
+    var touchState = { x: 0, y: 0, touched: false };
+    var activeSprite = null;
+    var spriteBinding = false;
+
+    var virtualFS = {
+      "/local/app.js": "// KryonOS App File\nSystem.print('Iniciando app do FS...');",
+      "/local/config.json": '{"theme":"dark","autoStart":true}',
+      "/sd/data_log.txt": "2026-08-08 10:00:00 | Sensor: 24.5C"
+    };
+
+    var hwState = { pinModes: {}, digitalOutputs: {}, analogOutputs: {}, wifiActive: true };
+
+    var COLOR_CONSTANTS = {
+      BLACK: 0x0000, WHITE: 0xFFFF, RED: 0xF800, GREEN: 0x07E0,
+      BLUE: 0x001F, DARKGREY: 0x7BEF, LIGHTGREY: 0xC618, YELLOW: 0xFFE0,
+      CYAN: 0x07FF, MAGENTA: 0xF81F, NAVY: 0x000F, PURPLE: 0x780F, ORANGE: 0xFD20
+    };
+
+    function rgb565ToCss(color) {
+      var r = Math.round((((color >> 11) & 0x1F) * 255) / 31);
+      var g = Math.round((((color >> 5) & 0x3F) * 255) / 63);
+      var b = Math.round(((color & 0x1F) * 255) / 31);
+      return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
+    function getCurrentTargetCtx() {
+      if (spriteBinding && activeSprite) return activeSprite.ctx;
+      return ctx;
+    }
+
+    // =========================================================================
+    // KRYONOS NATIVE BINDINGS (`System` API)
+    // =========================================================================
+
+    var System = {
+      screenWidth: function() { return TFT_WIDTH; },
+      screenHeight: function() { return TFT_HEIGHT; },
+      getOSVersion: function() { return "1.0.0"; },
+      getAPILevel: function() { return 1; },
+      millis: function() { return Date.now() - bootTime; },
+      micros: function() { return (Date.now() - bootTime) * 1000; },
+      getTemperature: function() { return parseFloat((38.0 + Math.sin(Date.now() / 3000) * 1.5).toFixed(1)); },
+      hasTemperatureSensor: function() { return true; },
+      
+      delay: function(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); },
+      delayMicroseconds: function(us) { return new Promise(function(resolve) { setTimeout(resolve, us / 1000); }); },
+
+      print: function(str) {
+        var consoleEl = document.getElementById('consoleOutput');
+        consoleEl.textContent += str + "\n";
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      },
+
+      getTouch: function() {
+        if (touchState.touched && touchState.x >= 200 && touchState.y <= 40) {
+          System.print("[KERNEL] Gatilho de Saída Acionado! App encerrado.");
+          stopScript("App abortado pelo usuário (Touch no canto sup. dir).");
+        }
+        return { x: touchState.x, y: touchState.y, touched: touchState.touched };
+      },
+
+      getInfo: function() {
+        return {
+          totalRAM: 327680, freeRAM: 92160, minFreeRAM: 45000, maxAllocRAM: 28000,
+          cpuFreqMHz: 240, chipModel: "ESP32-D0WDQ6", chipCores: 2, chipRevision: 1,
+          flashSize: 4194304, uptimeMs: System.millis()
+        };
+      },
+
+      getIPAddress: function() { return hwState.wifiActive ? "192.168.1.100" : "0.0.0.0"; },
+      isWiFiActive: function() { return hwState.wifiActive; },
+      restart: function() { rebootSystem(); },
+
+      getTime: function() {
+        var d = new Date();
+        return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+      },
+      getSeconds: function() { return new Date().getSeconds(); },
+      getDate: function() {
+        var d = new Date();
+        return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+      },
+      getYear: function() { return new Date().getFullYear(); },
+      getMonth: function() { return new Date().getMonth() + 1; },
+      getDay: function() { return new Date().getDate(); },
+      getTimezone: function() { return "UTC-3"; },
+
+      prompt: function(promptMsg, initialText) {
+        return new Promise(function(resolve) {
+          var res = window.prompt(promptMsg, initialText || "");
+          resolve(res || "");
+        });
+      },
+
+      color: function(r, g, b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); },
+
+      fillScreen: function(color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.fillRect(0, 0, c.canvas.width, c.canvas.height);
+      },
+      drawPixel: function(x, y, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.fillRect(x, y, 1, 1);
+      },
+      drawLine: function(x1, y1, x2, y2, color) {
+        var c = getCurrentTargetCtx();
+        c.strokeStyle = rgb565ToCss(color);
+        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+      },
+      drawFastHLine: function(x, y, w, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.fillRect(x, y, w, 1);
+      },
+      drawFastVLine: function(x, y, h, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.fillRect(x, y, 1, h);
+      },
+      drawRect: function(x, y, w, h, color) {
+        var c = getCurrentTargetCtx();
+        c.strokeStyle = rgb565ToCss(color);
+        c.strokeRect(x, y, w, h);
+      },
+      fillRect: function(x, y, w, h, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.fillRect(x, y, w, h);
+      },
+      drawRoundRect: function(x, y, w, h, radius, color) {
+        var c = getCurrentTargetCtx();
+        c.strokeStyle = rgb565ToCss(color);
+        c.beginPath(); c.roundRect(x, y, w, h, radius); c.stroke();
+      },
+      fillRoundRect: function(x, y, w, h, radius, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.beginPath(); c.roundRect(x, y, w, h, radius); c.fill();
+      },
+      drawCircle: function(x, y, r, color) {
+        var c = getCurrentTargetCtx();
+        c.strokeStyle = rgb565ToCss(color);
+        c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.stroke();
+      },
+      fillCircle: function(x, y, r, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.fill();
+      },
+      drawTriangle: function(x1, y1, x2, y2, x3, y3, color) {
+        var c = getCurrentTargetCtx();
+        c.strokeStyle = rgb565ToCss(color);
+        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.stroke();
+      },
+      fillTriangle: function(x1, y1, x2, y2, x3, y3, color) {
+        var c = getCurrentTargetCtx();
+        c.fillStyle = rgb565ToCss(color);
+        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.fill();
+      },
+
+      createSprite: function(w, h) {
+        var spriteCanvas = document.createElement('canvas');
+        spriteCanvas.width = w; spriteCanvas.height = h;
+        activeSprite = { canvas: spriteCanvas, ctx: spriteCanvas.getContext('2d'), w: w, h: h };
+        return true;
+      },
+      bindSprite: function(enabled) { spriteBinding = !!enabled; },
+      pushSprite: function(x, y) { if (activeSprite) ctx.drawImage(activeSprite.canvas, x, y); },
+      deleteSprite: function() { activeSprite = null; spriteBinding = false; },
+
+      setTextColor: function(fg, bg) { textFgColor = fg; textBgColor = bg; },
+      setTextSize: function(s) { textSize = Math.max(1, Math.min(5, s)); },
+      drawString: function(str, x, y, font) {
+        var c = getCurrentTargetCtx();
+        var fontSize = (font === 4 ? 18 : font === 2 ? 14 : 10) * textSize;
+        c.font = fontSize + "px monospace";
+        if (textBgColor !== undefined) {
+          var metrics = c.measureText(str);
+          c.fillStyle = rgb565ToCss(textBgColor);
+          c.fillRect(x, y, metrics.width, fontSize);
+        }
+        c.fillStyle = rgb565ToCss(textFgColor);
+        c.fillText(str, x, y + fontSize - 2);
+      },
+
+      gpio: {
+        INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, HIGH: 1, LOW: 0,
+        pinMode: function(pin, mode) { hwState.pinModes[pin] = mode; },
+        digitalWrite: function(pin, val) {
+          hwState.digitalOutputs[pin] = val;
+          if (pin === 2) document.getElementById('ledPin2').className = "led-indicator " + (val ? "active" : "");
+        },
+        digitalRead: function(pin) {
+          if (pin === 5) return document.getElementById('pin5Digital').checked ? 1 : 0;
+          return 0;
+        },
+        analogRead: function(pin) {
+          if (pin === 4) return parseInt(document.getElementById('pin4Analog').value);
+          return 0;
+        },
+        analogWrite: function(pin, pwm) { hwState.analogOutputs[pin] = pwm; }
+      }
+    };
+
+    var FS = {
+      exists: function(path) { return virtualFS.hasOwnProperty(path); },
+      readTextFile: function(path) { return virtualFS[path] || null; },
+      writeTextFile: function(path, content) { virtualFS[path] = content; renderFsTree(); return true; },
+      appendTextFile: function(path, content) { virtualFS[path] = (virtualFS[path] || "") + content; return true; },
+      deleteFile: function(path) { delete virtualFS[path]; renderFsTree(); return true; },
+      listDir: function(dir) { return Object.keys(virtualFS).filter(function(p) { return p.indexOf(dir) === 0; }); },
+      getFileSize: function(path) { return virtualFS[path] ? virtualFS[path].length : 0; },
+      getFileMD5: function(path) { return "e10adc3949ba59abbe56e057f20f883e"; }
+    };
+
+    // Banco de Assinaturas para o Popover
+    var methodSignatures = {
+      "System.delay": "System.delay(ms) - Pausa execução em milissegundos e roda o GC.",
+      "System.print": "System.print(str) - Imprime mensagem no Monitor Serial (115200 baud).",
+      "System.color": "System.color(r, g, b) - Converte cores RGB para o formato 16-bit RGB565.",
+      "System.fillScreen": "System.fillScreen(color) - Preenche a tela inteira com uma cor.",
+      "System.fillRect": "System.fillRect(x, y, w, h, color) - Desenha retângulo preenchido.",
+      "System.drawRect": "System.drawRect(x, y, w, h, color) - Desenha borda de retângulo.",
+      "System.fillCircle": "System.fillCircle(x, y, r, color) - Desenha círculo preenchido.",
+      "System.drawString": "System.drawString(text, x, y, font) - Renderiza string na tela.",
+      "System.getTouch": "System.getTouch() - Retorna { x, y, touched } do touch screen.",
+      "System.getInfo": "System.getInfo() - Retorna dados de RAM, CPU e Uptime.",
+      "System.createSprite": "System.createSprite(w, h) - Aloca um buffer off-screen em RAM.",
+      "System.bindSprite": "System.bindSprite(enabled) - Redireciona desenho para o Sprite.",
+      "System.pushSprite": "System.pushSprite(x, y) - Envia o buffer do Sprite para o display.",
+      "System.gpio.pinMode": "System.gpio.pinMode(pin, mode) - Configura pino como INPUT ou OUTPUT.",
+      "System.gpio.digitalWrite": "System.gpio.digitalWrite(pin, state) - Define HIGH (3.3V) ou LOW (0V).",
+      "System.gpio.analogRead": "System.gpio.analogRead(pin) - Lê conversor ADC (0 a 4095).",
+      "FS.readTextFile": "FS.readTextFile(path) - Carrega arquivo de texto para a RAM.",
+      "FS.writeTextFile": "FS.writeTextFile(path, content) - Grava string em arquivo no disco."
+    };
+
+    // =========================================================================
+    // EXEMPLOS DE CÓDIGO
+    // =========================================================================
+
+    var codeExamples = {
+      dashboard: `// Modern UI Dashboard Demo para KryonOS\nvar SW = System.screenWidth();\nvar SH = System.screenHeight();\n\nvar cards = [\n    { title: "System Status", val: "100%" },\n    { title: "Battery Health", val: "84%" }\n];\n\nfunction render() {\n    System.fillScreen(BLACK);\n    System.setTextColor(WHITE, BLACK);\n    System.drawString("Dashboard Ativo", 20, 20, 2);\n}\n\nrender();`,
+      graphics: `// Exemplo: GRAPHICS API\nSystem.fillScreen(BLACK);\nSystem.drawRect(10, 10, 100, 50, RED);\nSystem.fillRect(120, 10, 100, 50, BLUE);\nSystem.drawString("Graphics API", 15, 270, 2);`,
+      fs: `// Exemplo: FILE SYSTEM API\nvar caminho = "/local/exemplo.txt";\nFS.writeTextFile(caminho, "KryonOS Data");\nSystem.print(FS.readTextFile(caminho));`,
+      gpio: `// Exemplo: HARDWARE GPIO API\nSystem.gpio.pinMode(2, System.gpio.OUTPUT);\nvar ledState = 0;\nwhile (true) {\n  ledState = ledState === 0 ? 1 : 0;\n  System.gpio.digitalWrite(2, ledState);\n  System.delay(500);\n}`,
+      system: `// Exemplo: SYSTEM API\nSystem.fillScreen(BLACK);\nvar info = System.getInfo();\nSystem.drawString("RAM Livre: " + info.freeRAM, 20, 100, 1);`,
+      sprites: `// Exemplo: SPRITES\nSystem.createSprite(80, 80);\nSystem.bindSprite(true);\nSystem.fillScreen(BLUE);\nSystem.bindSprite(false);\nSystem.pushSprite(50, 50);`
+    };
+
+    // =========================================================================
+    // INICIALIZAÇÃO DO CODEMIRROR & INTELISENSE (AUTO-COMPLETE + POPOVER)
+    // =========================================================================
+
+    var editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), {
+      mode: "javascript",
+      theme: "dracula",
+      lineNumbers: true,
+      tabSize: 2,
+      extraKeys: { "Ctrl-Space": "autocomplete" }
+    });
+
+    // Extensão CodeMirror para Auto-complete Dinâmico (Funções + Variáveis Locais + APIs)
+    CodeMirror.registerHelper("hint", "javascript", function(cm) {
+      var cur = cm.getCursor();
+      var token = cm.getTokenAt(cur);
+      var line = cm.getLine(cur.line);
+      var start = token.start, end = cur.ch, word = token.string.trim();
+
+      // Coleta APIs nativas e cores
+      var suggestions = [
+        "System.screenWidth()", "System.screenHeight()", "System.getOSVersion()", "System.getAPILevel()",
+        "System.millis()", "System.micros()", "System.getTemperature()", "System.delay(", "System.print(",
+        "System.getTouch()", "System.getInfo()", "System.getIPAddress()", "System.isWiFiActive()", "System.restart()",
+        "System.getTime()", "System.getDate()", "System.color(", "System.fillScreen(", "System.drawPixel(",
+        "System.drawLine(", "System.drawFastHLine(", "System.drawFastVLine(", "System.drawRect(", "System.fillRect(",
+        "System.drawRoundRect(", "System.fillRoundRect(", "System.drawCircle(", "System.fillCircle(",
+        "System.drawTriangle(", "System.fillTriangle(", "System.createSprite(", "System.bindSprite(",
+        "System.pushSprite(", "System.deleteSprite()", "System.setTextColor(", "System.setTextSize(", "System.drawString(",
+        "System.gpio.pinMode(", "System.gpio.digitalWrite(", "System.gpio.digitalRead(", "System.gpio.analogRead(", "System.gpio.analogWrite(",
+        "FS.exists(", "FS.readTextFile(", "FS.writeTextFile(", "FS.appendTextFile(", "FS.deleteFile(", "FS.listDir(", "FS.getFileSize(", "FS.getFileMD5(",
+        "BLACK", "WHITE", "RED", "GREEN", "BLUE", "DARKGREY", "LIGHTGREY", "YELLOW", "CYAN", "MAGENTA", "NAVY", "PURPLE", "ORANGE"
+      ];
+
+      // Coleta Funções e Variáveis Locais do Código Atual (AST Simples por RegEx)
+      var fullCode = cm.getValue();
+      var funcRegex = /\bfunction\s+([a-zA-Z_$][\w$]*)/g;
+      var varRegex = /\bvar\s+([a-zA-Z_$][\w$]*)/g;
+      var match;
+
+      while ((match = funcRegex.exec(fullCode)) !== null) {
+        if (match[1] && suggestions.indexOf(match[1]) === -1) suggestions.push(match[1] + "()");
+      }
+      while ((match = varRegex.exec(fullCode)) !== null) {
+        if (match[1] && suggestions.indexOf(match[1]) === -1) suggestions.push(match[1]);
+      }
+
+      var list = suggestions.filter(function(item) {
+        return item.toLowerCase().indexOf(word.toLowerCase()) === 0;
+      });
+
+      return { list: list, from: CodeMirror.Pos(cur.line, start), to: CodeMirror.Pos(cur.line, end) };
+    });
+
+    // Trigger do Autocomplete ao digitar
+    editor.on("inputRead", function(cm, change) {
+      if (change.origin !== "+delete" && change.text[0] && /^[\w\.$]$/.test(change.text[0])) {
+        CodeMirror.commands.autocomplete(cm, null, { completeSingle: false });
+      }
+    });
+
+    // Popover de Assinatura de Método ao Cursor
+    var popover = document.getElementById('methodPopover');
+    editor.on("cursorActivity", function(cm) {
+      var cur = cm.getCursor();
+      var line = cm.getLine(cur.line);
+      var textUpToCursor = line.substring(0, cur.ch);
+
+      // Procura se há uma chamada de método conhecida antes do cursor
+      var matchedKey = null;
+      Object.keys(methodSignatures).forEach(function(key) {
+        if (textUpToCursor.indexOf(key) !== -1) {
+          matchedKey = key;
+        }
+      });
+
+      if (matchedKey) {
+        popover.innerText = methodSignatures[matchedKey];
+        var coords = cm.charCoords(cur, "local");
+        popover.style.left = coords.left + "px";
+        popover.style.top = (coords.top - 28) + "px";
+        popover.style.display = "block";
+      } else {
+        popover.style.display = "none";
+      }
+    });
+
+    // =========================================================================
+    // PARSER & TRANSFORMADOR ASÍNCRONO
+    // =========================================================================
+
+    function validateES5Syntax(code) {
+      var warnings = [];
+      if (/\blet\s+/.test(code)) warnings.push("Uso de 'let' detectado! Duktape requer 'var'.");
+      if (/\bconst\s+/.test(code)) warnings.push("Uso de 'const' detectado! Duktape requer 'var'.");
+      if (/=>/.test(code)) warnings.push("Arrow Function (()=>) detectada! Use 'function() {}'.");
+      if (/`[^`]*`/.test(code)) warnings.push("Template String (`) não suportada pelo Duktape!");
+      
+      var box = document.getElementById('linterBox');
+      if (warnings.length > 0) {
+        box.style.display = 'block';
+        box.innerHTML = "⚠️ <b>Avisos ES5/Duktape:</b><br>" + warnings.join("<br>");
+      } else {
+        box.style.display = 'none';
+      }
+    }
+
+    function transformAsyncCode(code) {
+      var funcNames = [];
+      var declRegex = /\bfunction\s+([a-zA-Z_$][\w$]*)/g;
+      var match;
+      while ((match = declRegex.exec(code)) !== null) {
+        if (match[1] && funcNames.indexOf(match[1]) === -1) {
+          funcNames.push(match[1]);
+        }
+      }
+
+      var transformed = code.replace(/\bfunction\s+/g, "async function ");
+      transformed = transformed.replace(/\bSystem\.delay\s*\(/g, "await System.delay(");
+      transformed = transformed.replace(/\bSystem\.prompt\s*\(/g, "await System.prompt(");
+
+      funcNames.forEach(function(fn) {
+        var callRegex = new RegExp("(?:(\\.\\s*)|(async\\s+function\\s+))?\\b" + fn + "\\s*\\(", "g");
+        transformed = transformed.replace(callRegex, function(fullMatch, isDot, isDecl) {
+          if (isDot || isDecl) return fullMatch;
+          return "await " + fn + "(";
+        });
+      });
+
+      return transformed;
+    }
+
+    async function runScript() {
+      stopScript("Iniciando novo script...");
+      var rawCode = editor.getValue();
+      validateES5Syntax(rawCode);
+
+      var asyncCode = transformAsyncCode(rawCode);
+      
+      isRunning = true;
+      scriptExecutionId++;
+      var currentId = scriptExecutionId;
+
+      document.getElementById('scriptStatus').innerText = "Rodando";
+      document.getElementById('scriptStatus').style.color = "var(--accent-color)";
+
+      try {
+        var colorNames = Object.keys(COLOR_CONSTANTS);
+        var colorValues = colorNames.map(function(k) { return COLOR_CONSTANTS[k]; });
+
+        var fnArgs = ["System", "FS"].concat(colorNames).concat(["async function _exec() {\n" + asyncCode + "\n}\nreturn _exec();"]);
+        var asyncFn = Function.apply(null, fnArgs);
+
+        var callArgs = [System, FS].concat(colorValues);
+        await asyncFn.apply(null, callArgs);
+
+        if (currentId === scriptExecutionId) {
+          document.getElementById('scriptStatus').innerText = "Concluído";
+        }
+      } catch (err) {
+        if (currentId === scriptExecutionId) {
+          System.print("[ERRO JS] " + err.message);
+          document.getElementById('scriptStatus').innerText = "Erro";
+          document.getElementById('scriptStatus').style.color = "var(--accent-danger)";
+        }
+      }
+    }
+
+    function stopScript(reason) {
+      isRunning = false;
+      scriptExecutionId++;
+      System.deleteSprite();
+      document.getElementById('scriptStatus').innerText = "Parado";
+      document.getElementById('scriptStatus').style.color = "var(--text-muted)";
+      if (reason) System.print("[SYSTEM] " + reason);
+    }
+
+    function rebootSystem() {
+      stopScript("Reboot do hardware executado.");
+      System.fillScreen(0x0000);
+      System.drawString("KryonOS Booting...", 30, 150, 2);
+      setTimeout(function() { System.fillScreen(0x0000); }, 500);
+    }
+
+    // =========================================================================
+    // EVENT LISTENERS & AUTO-RUN TIMER
+    // =========================================================================
+
+    editor.on("change", function() {
+      var code = editor.getValue();
+      validateES5Syntax(code);
+
+      if (autoRunTimer) clearTimeout(autoRunTimer);
+
+      var statusEl = document.getElementById('scriptStatus');
+      if (isRunning) {
+        statusEl.innerText = "Digitando (Aguardando 3s...)";
+        statusEl.style.color = "var(--accent-warn)";
+      }
+
+      autoRunTimer = setTimeout(function() {
+        if (isRunning) {
+          System.print("[SYSTEM] Código alterado. Reiniciando aplicação automaticamente...");
+          runScript();
+        }
+      }, 3000);
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+      var rect = canvas.getBoundingClientRect();
+      touchState.x = Math.floor((e.clientX - rect.left) * (TFT_WIDTH / rect.width));
+      touchState.y = Math.floor((e.clientY - rect.top) * (TFT_HEIGHT / rect.height));
+      touchState.touched = true;
+      document.getElementById('hudTouch').innerText = "Touch: " + touchState.x + "," + touchState.y;
+    });
+
+    canvas.addEventListener('mouseup', function() {
+      touchState.touched = false;
+      document.getElementById('hudTouch').innerText = "Touch: OFF";
+    });
+
+    function updateHwState() {
+      document.getElementById('valPin4').innerText = document.getElementById('pin4Analog').value;
+      hwState.wifiActive = document.getElementById('wifiToggle').checked;
+      document.getElementById('ledWifi').className = "led-indicator " + (hwState.wifiActive ? "active" : "");
+    }
+
+    function renderFsTree() {
+      var treeEl = document.getElementById('fsTree');
+      treeEl.innerHTML = "";
+      Object.keys(virtualFS).forEach(function(path) {
+        var item = document.createElement('div');
+        item.className = "fs-item";
+        item.innerText = "📄 " + path + " (" + virtualFS[path].length + "b)";
+        treeEl.appendChild(item);
+      });
+    }
+
+    function loadSelectedExample() {
+      var sel = document.getElementById('exampleSelector').value;
+      editor.setValue(codeExamples[sel] || "");
+      validateES5Syntax(editor.getValue());
+    }
+
+    setInterval(function() {
+      document.getElementById('cpuTempReadout').innerText = System.getTemperature() + " °C";
+    }, 2000);
+
+    window.onload = function() {
+      loadSelectedExample();
+      renderFsTree();
+      rebootSystem();
+    };
+  </script>
+</body>
+</html>

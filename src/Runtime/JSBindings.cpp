@@ -6,6 +6,8 @@
 #include <SPI.h>
 
 TFT_eSPI* JSBindings::tftInstance = nullptr;
+TouchScreen* JSBindings::touchInstance = nullptr;
+
 TFT_eSprite* JSBindings::tftSprite = nullptr;
 bool JSBindings::useSprite = false;
 
@@ -318,7 +320,11 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
     fs::FS* targetFS = nullptr;
     String relPath = "";
     if (strncmp(path, "/sd", 3) == 0) {
+#ifdef SD_CS_PIN
         targetFS = &SD;
+#else
+        targetFS = &SD_MMC;
+#endif
         relPath = String(path).substring(3);
         if (!relPath.startsWith("/")) relPath = "/" + relPath;
     } else if (strncmp(path, "/local", 6) == 0) {
@@ -512,8 +518,8 @@ duk_ret_t JSBindings::js_screenHeight(duk_context *ctx) {
 duk_ret_t JSBindings::js_getTouch(duk_context *ctx) {
     uint16_t tx, ty;
     bool touched = false;
-    if (tftInstance) {
-        touched = tftInstance->getTouch(&tx, &ty);
+    if (touchInstance) {
+        touched = touchInstance->getTouch(&tx, &ty);
         
         // Hidden OS Exit Button (Top Right Corner)
         if (touched && tx >= 200 && ty <= 40) {
@@ -838,8 +844,9 @@ duk_ret_t JSBindings::js_prompt(duk_context *ctx) {
 // Init - Register ALL bindings
 // =====================================================
 
-void JSBindings::init(duk_context *ctx, TFT_eSPI *tft) {
+void JSBindings::init(duk_context *ctx, TFT_eSPI *tft, TouchScreen *touch) {
     tftInstance = tft;
+    touchInstance = touch;
 
     // --- System Object ---
     duk_push_global_object(ctx);

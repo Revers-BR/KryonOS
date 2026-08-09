@@ -16,7 +16,11 @@ fs::FS* getFSFromPath(String& path) {
     if (path.startsWith("/sd")) {
         path = path.substring(3);
         if (path == "") path = "/";
+#ifdef SD_CS_PIN
         return &SD;
+#else
+        return &SD_MMC;
+#endif
     } else if (path.startsWith("/littlefs")) {
         path = path.substring(9);
         if (path == "") path = "/";
@@ -26,7 +30,11 @@ fs::FS* getFSFromPath(String& path) {
 }
 
 bool WebManager::init() {
+#ifdef SD_CS_PIN
     File wifiFile = SD.open("/wifi.txt", FILE_READ);
+#else
+    File wifiFile = SD_MMC.open("/wifi.txt", FILE_READ);
+#endif
     if (!wifiFile) {
         // Fallback to LittleFS
         wifiFile = LittleFS.open("/wifi.txt", FILE_READ);

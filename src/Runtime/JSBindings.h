@@ -4,13 +4,15 @@
 #include <Arduino.h>
 #include "duktape.h"
 #include <TFT_eSPI.h>
+#include <Touch/TouchScreen.h>
 
 class JSBindings {
 public:
-    static void init(duk_context *ctx, TFT_eSPI *tft);
+    static void init(duk_context *ctx, TFT_eSPI *tft, TouchScreen *touch);
 
 private:
     static TFT_eSPI *tftInstance;
+    static TouchScreen *touchInstance;
     static TFT_eSprite *tftSprite;
 
     // Double Buffering

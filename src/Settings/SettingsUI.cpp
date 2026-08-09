@@ -9,10 +9,12 @@
 #include <WiFiClientSecure.h>
 
 TFT_eSPI *SettingsUI::tftInstance = nullptr;
+TouchScreen *SettingsUI::touchInstance = nullptr;
 bool showResetDialog = false;
 
-void SettingsUI::init(TFT_eSPI *tft) {
+void SettingsUI::init(TFT_eSPI *tft, TouchScreen *touch) {
     tftInstance = tft;
+    touchInstance = touch;
 }
 
 String formatBytes(uint64_t bytes) {
@@ -246,8 +248,14 @@ void SettingsUI::drawAbout() {
     uint64_t fsUsed = LittleFS.usedBytes();
     uint64_t fsFree = fsTotal - fsUsed;
 
-    uint64_t sdTotal = SD.totalBytes();
-    uint64_t sdUsed = SD.usedBytes();
+    uint64_t sdTotal, sdUsed = SD.usedBytes();
+#ifdef SD_CS_PIN
+    sdTotal = SD.totalBytes();
+    sdUsed = SD.usedBytes();
+#else
+    sdTotal = SD_MMC.totalBytes();
+    sdUsed = SD_MMC.usedBytes();
+#endif
     uint64_t sdFree = sdTotal - sdUsed;
 
     tftInstance->setTextColor(TFT_CYAN, TFT_BLACK);
@@ -953,9 +961,9 @@ void SettingsUI::scanAndConnectWiFi() {
         uint16_t tx = 0, ty = 0;
         bool touched = false;
         while (!touched) {
-            if (tftInstance->getTouch(&tx, &ty)) {
+            if (touchInstance->getTouch(&tx, &ty)) {
                 // Debounce
-                while (tftInstance->getTouch(&tx, &ty)) { delay(10); }
+                while (touchInstance->getTouch(&tx, &ty)) { delay(10); }
                 touched = true;
             }
             delay(50);
@@ -990,17 +998,18 @@ void SettingsUI::scanAndConnectWiFi() {
         if (tappedIndex != -1) {
             String selectedSSID = WiFi.SSID(tappedIndex);
             selectedSSID.trim();
+            wifi_auth_mode_t authMode = WiFi.encryptionType(tappedIndex);
+            
             String password = "";
             bool connected = false;
 
             while (!connected) {
-                if (WiFi.encryptionType(tappedIndex) != WIFI_AUTH_OPEN) {
-                    // Ask for password
+                if (authMode != WIFI_AUTH_OPEN) {
                     String promptMsg = "Password for " + selectedSSID;
                     password = MyKeyboard::getString("", promptMsg, 64);
                     password.trim();
+
                     if (password.length() == 0) {
-                        // Canceled typing password
                         break; 
                     }
                 }
@@ -1010,7 +1019,7 @@ void SettingsUI::scanAndConnectWiFi() {
                 tftInstance->setTextDatum(MC_DATUM);
                 tftInstance->drawString("Testing Connection...", 120, 160, 2);
 
-                WiFi.disconnect(); // Reset state
+                WiFi.disconnect(); 
                 delay(100);
                 WiFi.mode(WIFI_STA);
                 
@@ -1021,7 +1030,7 @@ void SettingsUI::scanAndConnectWiFi() {
                 }
                 
                 int attempts = 0;
-                while (WiFi.status() != WL_CONNECTED && attempts < 30) { // Wait up to 15 seconds
+                while (WiFi.status() != WL_CONNECTED && attempts < 30) {
                     delay(500);
                     attempts++;
                 }
@@ -1029,7 +1038,7 @@ void SettingsUI::scanAndConnectWiFi() {
                 if (WiFi.status() == WL_CONNECTED) {
                     connected = true;
                 } else {
-                    if (WiFi.encryptionType(tappedIndex) == WIFI_AUTH_OPEN) {
+                    if (authMode == WIFI_AUTH_OPEN) {
                         tftInstance->fillScreen(TFT_BLACK);
                         tftInstance->setTextColor(TFT_RED, TFT_BLACK);
                         tftInstance->drawString("Failed to Connect!", 120, 160, 2);
@@ -1041,20 +1050,21 @@ void SettingsUI::scanAndConnectWiFi() {
                         tftInstance->drawString("Wrong Password!", 120, 140, 2);
                         tftInstance->drawString("Please try again.", 120, 160, 2);
                         delay(2000);
-                        // Loop continues and asks for password again
                     }
                 }
             }
 
             if (!connected) {
-                continue; // Go back to scanning list
+                continue;
             }
 
-            // Save and Reboot
+            // Persistência das credenciais
+            String credentialsData = selectedSSID + "\n" + password;
+            
             if (FileSystem::exists("/sd/")) {
-                FileSystem::writeTextFile("/sd/wifi.txt", (selectedSSID + "\n" + password).c_str());
+                bool saved = FileSystem::writeTextFile("/sd/wifi.txt", credentialsData.c_str());
             } else {
-                FileSystem::writeTextFile("/local/wifi.txt", (selectedSSID + "\n" + password).c_str());
+                bool saved = FileSystem::writeTextFile("/local/wifi.txt", credentialsData.c_str());
             }
 
             tftInstance->fillScreen(TFT_BLACK);
@@ -1062,6 +1072,7 @@ void SettingsUI::scanAndConnectWiFi() {
             tftInstance->setTextDatum(MC_DATUM);
             tftInstance->drawString("Connected! Rebooting...", 120, 160, 2);
             delay(1000);
+            
             ESP.restart();
         }
     }
