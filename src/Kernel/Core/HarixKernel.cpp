@@ -1,11 +1,8 @@
 #include "HarixKernel.h"
 #include "../../Runtime/JSBindings.h"
 #include "../../File System/FileSystem.h"
-#include <Touch/TouchScreen.h>
 
 duk_context *HarixKernel::ctx = nullptr;
-TFT_eSPI *HarixKernel::tftInstance = nullptr;
-TouchScreen *HarixKernel::touchInstance  = nullptr;
 
 static void *my_alloc(void *udata, duk_size_t size) {
     if (size == 0) return nullptr;
@@ -38,42 +35,32 @@ static void my_free(void *udata, void *ptr) {
 static void my_fatal(void *udata, const char *msg) {
     Serial.print("Duktape fatal error: ");
     Serial.println(msg ? msg : "no message");
+
+    tft.fillScreen(TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("Out Of Ram Error", 10, 20, 4);
+    tft.drawString("Please turn off WiFi in", 10, 60, 2);
+    tft.drawString("setting to free the ram", 10, 80, 2);
+    tft.drawString("and make this app running", 10, 100, 2);
     
-    if (HarixKernel::tftInstance) {
-        HarixKernel::tftInstance->fillScreen(TFT_RED);
-        HarixKernel::tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-        HarixKernel::tftInstance->drawString("Out Of Ram Error", 10, 20, 4);
-        HarixKernel::tftInstance->drawString("Please turn off WiFi in", 10, 60, 2);
-        HarixKernel::tftInstance->drawString("setting to free the ram", 10, 80, 2);
-        HarixKernel::tftInstance->drawString("and make this app running", 10, 100, 2);
-        
-        // Draw an 'X' to close/reboot
-        HarixKernel::tftInstance->fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-        HarixKernel::tftInstance->setTextColor(TFT_RED, TFT_WHITE);
-        HarixKernel::tftInstance->drawString("X", 215, 8, 2);
-        
-        // Wait for user to touch the X before rebooting!
-        uint16_t tx, ty;
-        while(true) {
-            if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
-                if (tx >= 200 && ty <= 40) break;
-            }
-            delay(50);
+    // Draw an 'X' to close/reboot
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_RED, TFT_WHITE);
+    tft.drawString("X", 215, 8, 2);
+    
+    // Wait for user to touch the X before rebooting!
+    uint16_t tx, ty;
+    while(true) {
+        if (getTouch(&tx, &ty)) {
+            if (tx >= 200 && ty <= 40) break;
         }
+        delay(50);
     }
     
     if (msg && strstr(msg, "alloc")) {
         Serial.println("out of memory");
     }
     ESP.restart(); // Reboot when they close it
-}
-
-void HarixKernel::init(TFT_eSPI *tft, TouchScreen *touch) {
-    tftInstance = tft;
-    touchInstance = touch;
-    // Duktape heap is no longer initialized here to save 60-80KB of RAM for the WebServer/WiFi.
-    // It will be allocated on-demand in runFile() and checkSyntax().
-    Serial.println("HarixKernel initialized successfully.");
 }
 
 void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
@@ -95,26 +82,24 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
         
         // Intercept OOM signals
         if (errorMsg.indexOf("alloc") != -1 || errorMsg.indexOf("out of memory") != -1) {
-            if (tftInstance) {
-                tftInstance->fillScreen(TFT_RED);
-                tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-                tftInstance->drawString("Out Of Ram Error", 10, 20, 4);
-                tftInstance->drawString("Please turn off WiFi in", 10, 60, 2);
-                tftInstance->drawString("setting to free the ram", 10, 80, 2);
-                tftInstance->drawString("and make this app running", 10, 100, 2);
-                
-                // Draw an 'X' to close
-                tftInstance->fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-                tftInstance->setTextColor(TFT_RED, TFT_WHITE);
-                tftInstance->drawString("X", 215, 8, 2);
-                
-                uint16_t tx, ty;
-                while(true) {
-                    if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
-                        if (tx >= 200 && ty <= 40) break;
-                    }
-                    delay(50);
+            tft.fillScreen(TFT_RED);
+            tft.setTextColor(TFT_WHITE, TFT_RED);
+            tft.drawString("Out Of Ram Error", 10, 20, 4);
+            tft.drawString("Please turn off WiFi in", 10, 60, 2);
+            tft.drawString("setting to free the ram", 10, 80, 2);
+            tft.drawString("and make this app running", 10, 100, 2);
+            
+            // Draw an 'X' to close
+            tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+            tft.setTextColor(TFT_RED, TFT_WHITE);
+            tft.drawString("X", 215, 8, 2);
+            
+            uint16_t tx, ty;
+            while(true) {
+                if (getTouch(&tx, &ty)) {
+                    if (tx >= 200 && ty <= 40) break;
                 }
+                delay(50);
             }
             duk_pop(ctx);
             // This is a soft-error (not Duktape fatal), so we can just return safely to Launcher
@@ -124,36 +109,34 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
         Serial.print("JS Execution Error: ");
         Serial.println(errorMsg);
         
-        if (tftInstance) {
-            tftInstance->fillScreen(TFT_RED);
-            tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-            tftInstance->setTextDatum(TL_DATUM);
-            tftInstance->drawString("JS EXCEPTION!", 10, 10, 4);
-            
-            // Draw up to 10 lines of the error message
-            int yPos = 50;
-            int startIdx = 0;
-            while (startIdx < errorMsg.length() && yPos < 300) {
-                int nextNewline = errorMsg.indexOf('\n', startIdx);
-                if (nextNewline == -1) nextNewline = errorMsg.length();
-                String line = errorMsg.substring(startIdx, nextNewline);
-                tftInstance->drawString(line, 10, yPos, 2);
-                yPos += 20;
-                startIdx = nextNewline + 1;
+        tft.fillScreen(TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.setTextDatum(TL_DATUM);
+        tft.drawString("JS EXCEPTION!", 10, 10, 4);
+        
+        // Draw up to 10 lines of the error message
+        int yPos = 50;
+        int startIdx = 0;
+        while (startIdx < errorMsg.length() && yPos < 300) {
+            int nextNewline = errorMsg.indexOf('\n', startIdx);
+            if (nextNewline == -1) nextNewline = errorMsg.length();
+            String line = errorMsg.substring(startIdx, nextNewline);
+            tft.drawString(line, 10, yPos, 2);
+            yPos += 20;
+            startIdx = nextNewline + 1;
+        }
+        
+        // Draw an 'X' to close
+        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+        tft.setTextColor(TFT_RED, TFT_WHITE);
+        tft.drawString("X", 215, 8, 2);
+        
+        uint16_t tx, ty;
+        while(true) {
+            if (getTouch(&tx, &ty)) {
+                if (tx >= 200 && ty <= 40) break;
             }
-            
-            // Draw an 'X' to close
-            tftInstance->fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-            tftInstance->setTextColor(TFT_RED, TFT_WHITE);
-            tftInstance->drawString("X", 215, 8, 2);
-            
-            uint16_t tx, ty;
-            while(true) {
-                if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
-                    if (tx >= 200 && ty <= 40) break;
-                }
-                delay(50);
-            }
+            delay(50);
         }
     }
     duk_pop(ctx); // pop result or error
@@ -236,31 +219,29 @@ void HarixKernel::runFile(const char* filePath) {
     ctx = duk_create_heap(my_alloc, my_realloc, my_free, nullptr, my_fatal);
     if (!ctx) {
         Serial.println("Failed to create Duktape heap for app.");
-        if (tftInstance) {
-            tftInstance->fillScreen(TFT_RED);
-            tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-            tftInstance->drawString("Out Of Ram Error", 10, 20, 4);
-            tftInstance->drawString("Please turn off WiFi in", 10, 60, 2);
-            tftInstance->drawString("setting to free the ram", 10, 80, 2);
-            tftInstance->drawString("and make this app running", 10, 100, 2);
-            
-            // Draw an 'X' to close
-            tftInstance->fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-            tftInstance->setTextColor(TFT_RED, TFT_WHITE);
-            tftInstance->drawString("X", 215, 8, 2);
-            
-            uint16_t tx, ty;
-            while(true) {
-                if (HarixKernel::touchInstance->getTouch(&tx, &ty)) {
-                    if (tx >= 200 && ty <= 40) break;
-                }
-                delay(50);
+        tft.fillScreen(TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.drawString("Out Of Ram Error", 10, 20, 4);
+        tft.drawString("Please turn off WiFi in", 10, 60, 2);
+        tft.drawString("setting to free the ram", 10, 80, 2);
+        tft.drawString("and make this app running", 10, 100, 2);
+        
+        // Draw an 'X' to close
+        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+        tft.setTextColor(TFT_RED, TFT_WHITE);
+        tft.drawString("X", 215, 8, 2);
+        
+        uint16_t tx, ty;
+        while(true) {
+            if (getTouch(&tx, &ty)) {
+                if (tx >= 200 && ty <= 40) break;
             }
+            delay(50);
         }
         return; // Soft exit back to OS
     }
 
-    JSBindings::init(ctx, tftInstance, touchInstance);
+    JSBindings::init(ctx);
     
     {
         String content = FileSystem::readTextFile(filePath);

@@ -1,8 +1,5 @@
 #include "MyKeyboard.h"
 
-TFT_eSPI *MyKeyboard::tftInstance = nullptr;
-TouchScreen *MyKeyboard::touchInstance = nullptr;
-
 const int kw = 12; // keyboard width
 const int kh = 4;  // keyboard height
 char qwerty_keyset[kh][kw][2] = {
@@ -12,14 +9,8 @@ char qwerty_keyset[kh][kw][2] = {
     {{'\\', '|'}, {'z', 'Z'}, {'x', 'X'}, {'c', 'C'}, {'v', 'V'}, {'b', 'B'}, {'n', 'N'}, {'m', 'M'}, {',', '<'}, {'.', '>'}, {'/', '?'}, {' ', ' '}}
 };
 
-void MyKeyboard::init(TFT_eSPI *tft, TouchScreen *touch) {
-    tftInstance = tft;
-    touchInstance = touch;
-}
-
 String MyKeyboard::getString(String initialText, String promptMsg, int maxLen) {
-    if (!tftInstance) return "";
-
+    
     String currentText = initialText;
     bool caps = false;
     bool done = false;
@@ -29,7 +20,7 @@ String MyKeyboard::getString(String initialText, String promptMsg, int maxLen) {
 
     while (!done) {
         uint16_t x, y;
-        if (MyKeyboard::touchInstance->getTouch(&x, &y)) {
+        if (getTouch(&x, &y)) {
             handleTouch(x, y, currentText, caps, done);
             if (!done) {
                 drawKeyboard(currentText, promptMsg, caps, -1, -1);
@@ -43,26 +34,26 @@ String MyKeyboard::getString(String initialText, String promptMsg, int maxLen) {
 }
 
 void MyKeyboard::drawKeyboard(String currentText, String promptMsg, bool caps, int selectedX, int selectedY) {
-    tftInstance->fillScreen(TFT_BLACK);
+    tft.fillScreen(TFT_BLACK);
     
     // Prompt
-    tftInstance->setTextColor(TFT_GREEN, TFT_BLACK);
-    tftInstance->setTextDatum(TL_DATUM);
-    tftInstance->drawString(promptMsg, 5, 10, 2);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(promptMsg, 5, 10, 2);
     
     // Text box
-    tftInstance->drawRect(5, 30, 230, 30, TFT_GREEN);
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->drawString(currentText + "_", 10, 38, 2);
+    tft.drawRect(5, 30, 230, 30, TFT_GREEN);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(currentText + "_", 10, 38, 2);
     
     // Top Row Buttons (OK, CAPS, DEL, SPACE, ESC)
     int btnW = 240 / 5;
     const char* btns[] = {"OK", caps ? "abc" : "ABC", "DEL", "SPACE", "ESC"};
     for (int i=0; i<5; i++) {
-        tftInstance->drawRect(i * btnW, 70, btnW, 30, TFT_GREEN);
-        tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-        tftInstance->setTextDatum(MC_DATUM);
-        tftInstance->drawString(btns[i], i * btnW + btnW/2, 85, 2);
+        tft.drawRect(i * btnW, 70, btnW, 30, TFT_GREEN);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString(btns[i], i * btnW + btnW/2, 85, 2);
     }
     
     // Keyboard Grid
@@ -74,12 +65,12 @@ void MyKeyboard::drawKeyboard(String currentText, String promptMsg, bool caps, i
             int px = x * keyW;
             int py = 110 + y * keyH;
             
-            tftInstance->drawRect(px, py, keyW, keyH, TFT_DARKGREY);
+            tft.drawRect(px, py, keyW, keyH, TFT_DARKGREY);
             
             char c = caps ? qwerty_keyset[y][x][1] : qwerty_keyset[y][x][0];
-            tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-            tftInstance->setTextDatum(MC_DATUM);
-            tftInstance->drawString(String(c), px + keyW/2, py + keyH/2, 2);
+            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.setTextDatum(MC_DATUM);
+            tft.drawString(String(c), px + keyW/2, py + keyH/2, 2);
         }
     }
 }

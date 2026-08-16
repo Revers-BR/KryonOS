@@ -6,7 +6,6 @@
 // External state variable
 extern int currentState;
 
-TFT_eSPI *InstallerUI::tftInstance = nullptr;
 FileEntry InstallerUI::files[200];
 int InstallerUI::fileCount = 0;
 String InstallerUI::currentPath = "/";
@@ -142,18 +141,18 @@ void InstallerUI::scanSD() {
         fileCount = FileSystem::listDirectory(currentPath.c_str(), files, 200);
         
         if (fileCount > 0) {
-            tftInstance->fillScreen(TFT_BLACK);
-            tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-            tftInstance->setTextDatum(MC_DATUM);
-            tftInstance->drawString("Loading App Details...", 120, 140, 2);
-            tftInstance->drawRect(30, 160, 180, 20, TFT_WHITE);
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.setTextDatum(MC_DATUM);
+            tft.drawString("Loading App Details...", 120, 140, 2);
+            tft.drawRect(30, 160, 180, 20, TFT_WHITE);
         }
         
         // Check each directory for app.json
         for (int i = 0; i < fileCount; i++) {
             if (fileCount > 0) {
                 int progressWidth = map(i, 0, fileCount, 0, 176);
-                tftInstance->fillRect(32, 162, progressWidth, 16, TFT_GREEN);
+                tft.fillRect(32, 162, progressWidth, 16, TFT_GREEN);
             }
             
             isAppPackage[i] = false;
@@ -230,7 +229,7 @@ void InstallerUI::scanSD() {
 // ============================================================
 
 void InstallerUI::draw() {
-    if (!tftInstance) return;
+    
     
     if (autoInstallPath.length() > 0) {
         selectedFile = autoInstallPath;
@@ -287,13 +286,13 @@ void InstallerUI::draw() {
 
 void InstallerUI::drawFileList() {
     // Draw the main border
-    tftInstance->drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
+    tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     
     // Header Bar
-    tftInstance->fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
-    tftInstance->drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
-    tftInstance->setTextColor(TFT_GREEN, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
+    tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
+    tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
     String headerText = "App Installer";
     if (currentPath.startsWith("/sd")) {
         headerText = "App Installer   /sdcard";
@@ -301,10 +300,10 @@ void InstallerUI::drawFileList() {
         headerText = "App Installer   /internal-storage";
     }
     
-    tftInstance->drawString(headerText, 120, 21, 2);
+    tft.drawString(headerText, 120, 21, 2);
     
     // Clear only the list area
-    tftInstance->fillRect(10, 45, 220, 230, TFT_BLACK);
+    tft.fillRect(10, 45, 220, 230, TFT_BLACK);
 
     int yPos = 45;
     int itemsPerPage = 7;
@@ -312,9 +311,9 @@ void InstallerUI::drawFileList() {
     int totalItems = fileCount + (hasUp ? 1 : 0);
 
     if (totalItems == 0) {
-        tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-        tftInstance->setTextDatum(TC_DATUM);
-        tftInstance->drawString("Folder is empty", 120, 100, 2);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextDatum(TC_DATUM);
+        tft.drawString("Folder is empty", 120, 100, 2);
     } else {
         for (int i = 0; i < itemsPerPage; i++) {
             int listIndex = scrollOffset + i;
@@ -342,10 +341,10 @@ void InstallerUI::drawFileList() {
             
             if (listIndex == selectedIndex) {
                 // Highlighted Item
-                tftInstance->fillRect(10, yPos, 220, 25, TFT_WHITE);
-                tftInstance->setTextColor(TFT_BLACK, TFT_WHITE);
-                tftInstance->setTextDatum(ML_DATUM);
-                tftInstance->drawString(("> " + displayName).c_str(), 15, yPos + 12, 2);
+                tft.fillRect(10, yPos, 220, 25, TFT_WHITE);
+                tft.setTextColor(TFT_BLACK, TFT_WHITE);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("> " + displayName).c_str(), 15, yPos + 12, 2);
             } else {
                 // Normal Item
                 uint16_t textColor = TFT_WHITE;
@@ -353,9 +352,9 @@ void InstallerUI::drawFileList() {
                     int fileIdx = listIndex - (hasUp ? 1 : 0);
                     if (isAppPackage[fileIdx]) textColor = TFT_GREEN;
                 }
-                tftInstance->setTextColor(textColor, TFT_BLACK);
-                tftInstance->setTextDatum(ML_DATUM);
-                tftInstance->drawString(("  " + displayName).c_str(), 15, yPos + 12, 2);
+                tft.setTextColor(textColor, TFT_BLACK);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("  " + displayName).c_str(), 15, yPos + 12, 2);
             }
             yPos += 30;
         }
@@ -363,17 +362,17 @@ void InstallerUI::drawFileList() {
 
     // Touch Footer
     // (We intentionally do NOT clear the footer to prevent blinking on scroll)
-    tftInstance->drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
+    tft.drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
     
-    tftInstance->drawString("ESC", 30, 300, 2);
-    tftInstance->drawString("|", 60, 300, 2);
-    tftInstance->drawString("UP", 90, 300, 2);
-    tftInstance->drawString("|", 120, 300, 2);
-    tftInstance->drawString("SEL", 150, 300, 2);
-    tftInstance->drawString("|", 180, 300, 2);
-    tftInstance->drawString("DN", 210, 300, 2);
+    tft.drawString("ESC", 30, 300, 2);
+    tft.drawString("|", 60, 300, 2);
+    tft.drawString("UP", 90, 300, 2);
+    tft.drawString("|", 120, 300, 2);
+    tft.drawString("SEL", 150, 300, 2);
+    tft.drawString("|", 180, 300, 2);
+    tft.drawString("DN", 210, 300, 2);
 }
 
 // ============================================================
@@ -381,52 +380,52 @@ void InstallerUI::drawFileList() {
 // ============================================================
 
 void InstallerUI::drawActionDialog() {
-    tftInstance->fillScreen(TFT_BLACK);
+    tft.fillScreen(TFT_BLACK);
     
     if (installState == 1) { // Overwrite Prompt
-        tftInstance->fillRoundRect(10, 80, 220, 160, 8, TFT_DARKGREY);
-        tftInstance->setTextColor(TFT_YELLOW, TFT_DARKGREY);
-        tftInstance->setTextDatum(MC_DATUM);
-        tftInstance->drawString("App Exists!", 120, 110, 4);
-        tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-        tftInstance->drawString("Overwrite?", 120, 140, 2);
+        tft.fillRoundRect(10, 80, 220, 160, 8, TFT_DARKGREY);
+        tft.setTextColor(TFT_YELLOW, TFT_DARKGREY);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("App Exists!", 120, 110, 4);
+        tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+        tft.drawString("Overwrite?", 120, 140, 2);
         
-        tftInstance->fillRoundRect(30, 180, 70, 30, 4, TFT_GREEN);
-        tftInstance->setTextColor(TFT_BLACK, TFT_GREEN);
-        tftInstance->drawString("Yes", 65, 195, 2);
+        tft.fillRoundRect(30, 180, 70, 30, 4, TFT_GREEN);
+        tft.setTextColor(TFT_BLACK, TFT_GREEN);
+        tft.drawString("Yes", 65, 195, 2);
         
-        tftInstance->fillRoundRect(140, 180, 70, 30, 4, TFT_RED);
-        tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-        tftInstance->drawString("No", 175, 195, 2);
+        tft.fillRoundRect(140, 180, 70, 30, 4, TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.drawString("No", 175, 195, 2);
         return;
     } else if (installState == 2) { // Result
-        tftInstance->fillRoundRect(10, 60, 220, 200, 8, TFT_DARKGREY);
-        tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-        tftInstance->setTextDatum(MC_DATUM);
+        tft.fillRoundRect(10, 60, 220, 200, 8, TFT_DARKGREY);
+        tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+        tft.setTextDatum(MC_DATUM);
         if (installResultOk) {
-            tftInstance->setTextColor(TFT_GREEN, TFT_DARKGREY);
-            tftInstance->drawString("Installed!", 120, 100, 4);
-            tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-            tftInstance->drawString(currentAppMeta.name, 120, 130, 2);
-            tftInstance->drawString("v" + currentAppMeta.version, 120, 150, 2);
+            tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+            tft.drawString("Installed!", 120, 100, 4);
+            tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+            tft.drawString(currentAppMeta.name, 120, 130, 2);
+            tft.drawString("v" + currentAppMeta.version, 120, 150, 2);
         } else {
-            tftInstance->setTextColor(TFT_RED, TFT_DARKGREY);
+            tft.setTextColor(TFT_RED, TFT_DARKGREY);
             if (installNoMetadata) {
-                tftInstance->drawString("No Metadata!", 120, 90, 4);
-                tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-                tftInstance->drawString("Folder missing app.json", 120, 125, 2);
-                tftInstance->drawString("Cannot install.", 120, 145, 2);
+                tft.drawString("No Metadata!", 120, 90, 4);
+                tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+                tft.drawString("Folder missing app.json", 120, 125, 2);
+                tft.drawString("Cannot install.", 120, 145, 2);
             } else if (installApiError) {
-                tftInstance->drawString("API Error!", 120, 90, 4);
-                tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-                tftInstance->drawString("App requires API: " + String(currentAppMeta.api), 120, 125, 2);
-                tftInstance->drawString("OS has API: " + String(KRYONOS_API_LEVEL), 120, 145, 2);
-                tftInstance->drawString("Update KryonOS!", 120, 170, 2);
+                tft.drawString("API Error!", 120, 90, 4);
+                tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+                tft.drawString("App requires API: " + String(currentAppMeta.api), 120, 125, 2);
+                tft.drawString("OS has API: " + String(KRYONOS_API_LEVEL), 120, 145, 2);
+                tft.drawString("Update KryonOS!", 120, 170, 2);
             } else if (installSyntaxError) {
-                tftInstance->drawString("Syntax Error!", 120, 90, 4);
+                tft.drawString("Syntax Error!", 120, 90, 4);
                 
-                tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-                tftInstance->setTextDatum(TC_DATUM);
+                tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+                tft.setTextDatum(TC_DATUM);
                 int startIdx = 0;
                 int yPos = 115;
                 int lineCount = 0;
@@ -435,44 +434,44 @@ void InstallerUI::drawActionDialog() {
                     if (nextNewline == -1) nextNewline = syntaxErrorMessage.length();
                     String line = syntaxErrorMessage.substring(startIdx, nextNewline);
                     if (line.length() > 30) line = line.substring(0, 27) + "...";
-                    tftInstance->drawString(line, 120, yPos, 1);
+                    tft.drawString(line, 120, yPos, 1);
                     yPos += 10;
                     startIdx = nextNewline + 1;
                     lineCount++;
                 }
-                tftInstance->setTextDatum(MC_DATUM);
+                tft.setTextDatum(MC_DATUM);
             } else {
-                tftInstance->drawString("Failed!", 120, 120, 4);
+                tft.drawString("Failed!", 120, 120, 4);
             }
         }
         
-        tftInstance->fillRoundRect(85, 220, 70, 30, 4, TFT_BLUE);
-        tftInstance->setTextColor(TFT_WHITE, TFT_BLUE);
-        tftInstance->setTextDatum(MC_DATUM);
-        tftInstance->drawString("OK", 120, 235, 2);
+        tft.fillRoundRect(85, 220, 70, 30, 4, TFT_BLUE);
+        tft.setTextColor(TFT_WHITE, TFT_BLUE);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("OK", 120, 235, 2);
         return;
     } else if (installState == 3) { // App Info Dialog (before install)
-        tftInstance->fillRoundRect(10, 30, 220, 240, 8, TFT_DARKGREY);
-        tftInstance->setTextColor(TFT_GREEN, TFT_DARKGREY);
-        tftInstance->setTextDatum(MC_DATUM);
-        tftInstance->drawString(currentAppMeta.name, 120, 55, 4);
+        tft.fillRoundRect(10, 30, 220, 240, 8, TFT_DARKGREY);
+        tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString(currentAppMeta.name, 120, 55, 4);
         
-        tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-        tftInstance->setTextDatum(TL_DATUM);
+        tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+        tft.setTextDatum(TL_DATUM);
         int y = 80;
-        tftInstance->drawString("Version: " + currentAppMeta.version, 25, y, 2); y += 16;
-        tftInstance->drawString("Author:  " + currentAppMeta.author, 25, y, 2); y += 16;
-        tftInstance->drawString("Type:    " + currentAppMeta.type, 25, y, 2); y += 16;
-        tftInstance->drawString("Category: " + currentAppMeta.category, 25, y, 2); y += 20;
+        tft.drawString("Version: " + currentAppMeta.version, 25, y, 2); y += 16;
+        tft.drawString("Author:  " + currentAppMeta.author, 25, y, 2); y += 16;
+        tft.drawString("Type:    " + currentAppMeta.type, 25, y, 2); y += 16;
+        tft.drawString("Category: " + currentAppMeta.category, 25, y, 2); y += 20;
         
         // Changelog or Description
-        tftInstance->setTextColor(TFT_LIGHTGREY, TFT_DARKGREY);
+        tft.setTextColor(TFT_LIGHTGREY, TFT_DARKGREY);
         String desc = "";
         
         if (isUpdatingApp && currentAppMeta.changelog.length() > 0) {
-            tftInstance->setTextColor(TFT_YELLOW, TFT_DARKGREY);
-            tftInstance->drawString("What's New:", 25, y, 2); y += 16;
-            tftInstance->setTextColor(TFT_LIGHTGREY, TFT_DARKGREY);
+            tft.setTextColor(TFT_YELLOW, TFT_DARKGREY);
+            tft.drawString("What's New:", 25, y, 2); y += 16;
+            tft.setTextColor(TFT_LIGHTGREY, TFT_DARKGREY);
             desc = currentAppMeta.changelog;
         } else {
             desc = currentAppMeta.description;
@@ -491,7 +490,7 @@ void InstallerUI::drawActionDialog() {
                     int spaceIdx = desc.lastIndexOf(' ', endIdx);
                     if (spaceIdx > startIdx) endIdx = spaceIdx;
                 }
-                tftInstance->drawString(desc.substring(startIdx, endIdx), 25, y, 2);
+                tft.drawString(desc.substring(startIdx, endIdx), 25, y, 2);
                 y += 16;
                 startIdx = endIdx;
                 if (startIdx < (int)desc.length() && desc[startIdx] == ' ') startIdx++;
@@ -500,44 +499,44 @@ void InstallerUI::drawActionDialog() {
         }
 
         // Install and Cancel buttons
-        tftInstance->setTextDatum(MC_DATUM);
-        tftInstance->fillRoundRect(25, 230, 80, 30, 4, TFT_GREEN);
-        tftInstance->setTextColor(TFT_BLACK, TFT_GREEN);
-        tftInstance->drawString(isUpdatingApp ? "Update" : "Install", 65, 245, 2);
+        tft.setTextDatum(MC_DATUM);
+        tft.fillRoundRect(25, 230, 80, 30, 4, TFT_GREEN);
+        tft.setTextColor(TFT_BLACK, TFT_GREEN);
+        tft.drawString(isUpdatingApp ? "Update" : "Install", 65, 245, 2);
         
-        tftInstance->fillRoundRect(135, 230, 80, 30, 4, TFT_RED);
-        tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-        tftInstance->drawString("Cancel", 175, 245, 2);
+        tft.fillRoundRect(135, 230, 80, 30, 4, TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.drawString("Cancel", 175, 245, 2);
         return;
     }
 
     // Default Action Dialog (for regular files - non-app folders)
-    tftInstance->fillRoundRect(10, 40, 220, 160, 8, TFT_DARKGREY);
-    tftInstance->setTextColor(TFT_WHITE, TFT_DARKGREY);
-    tftInstance->setTextDatum(MC_DATUM);
+    tft.fillRoundRect(10, 40, 220, 160, 8, TFT_DARKGREY);
+    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
     
     String filename = selectedFile.substring(selectedFile.lastIndexOf('/') + 1);
-    tftInstance->drawString(filename, 120, 60, 2);
+    tft.drawString(filename, 120, 60, 2);
     
     bool isJS = filename.endsWith(".js");
 
     // Run Button (only show if it's a JS file)
     if (isJS) {
-        tftInstance->fillRoundRect(20, 120, 60, 30, 4, TFT_GREEN);
-        tftInstance->setTextColor(TFT_BLACK, TFT_GREEN);
-        tftInstance->drawString("Run", 50, 135, 2);
+        tft.fillRoundRect(20, 120, 60, 30, 4, TFT_GREEN);
+        tft.setTextColor(TFT_BLACK, TFT_GREEN);
+        tft.drawString("Run", 50, 135, 2);
     }
 
     // Install Button
-    tftInstance->fillRoundRect(90, 120, 60, 30, 4, TFT_BLUE);
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLUE);
-    tftInstance->setTextDatum(MC_DATUM);
-    tftInstance->drawString("Install", 120, 135, 2);
+    tft.fillRoundRect(90, 120, 60, 30, 4, TFT_BLUE);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Install", 120, 135, 2);
     
     // Cancel Button
-    tftInstance->fillRoundRect(160, 120, 60, 30, 4, TFT_RED);
-    tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-    tftInstance->drawString("Cancel", 190, 135, 2);
+    tft.fillRoundRect(160, 120, 60, 30, 4, TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("Cancel", 190, 135, 2);
 }
 
 // ============================================================
@@ -608,7 +607,7 @@ void InstallerUI::performInstall(const String& srcFolder, const String& appName,
     FileSystem::mkdir(destBase.c_str());
     
     // Show installing screen
-    tftInstance->fillScreen(TFT_BLACK);
+    tft.fillScreen(TFT_BLACK);
     
     // Copy entire folder with progress callback
     installResultOk = FileSystem::copyDirectory(srcFolder.c_str(), destFolder.c_str(), installProgressCallback);
@@ -634,40 +633,40 @@ void InstallerUI::performInstall(const String& srcFolder, const String& appName,
 // ============================================================
 
 void InstallerUI::drawHelp() {
-    tftInstance->fillScreen(TFT_BLACK);
-    tftInstance->drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
+    tft.fillScreen(TFT_BLACK);
+    tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     
     // Header Bar
-    tftInstance->fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
-    tftInstance->drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
-    tftInstance->setTextColor(TFT_GREEN, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
-    tftInstance->drawString("Installer Help", 120, 21, 2);
+    tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
+    tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Installer Help", 120, 21, 2);
     
     // Help Text
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(TL_DATUM);
     int y = 45;
     
-    tftInstance->drawString("How to Install Apps:", 10, y, 2); y += 18;
-    tftInstance->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    tftInstance->drawString("1. Put app folder on SD.", 10, y, 2); y += 14;
-    tftInstance->drawString("2. Folder needs app.json", 10, y, 2); y += 14;
-    tftInstance->drawString("   and main.js inside.", 10, y, 2); y += 14;
-    tftInstance->drawString("3. Tap [APP] to install.", 10, y, 2); y += 14;
-    tftInstance->drawString("4. App appears in Home.", 10, y, 2); y += 20;
+    tft.drawString("How to Install Apps:", 10, y, 2); y += 18;
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.drawString("1. Put app folder on SD.", 10, y, 2); y += 14;
+    tft.drawString("2. Folder needs app.json", 10, y, 2); y += 14;
+    tft.drawString("   and main.js inside.", 10, y, 2); y += 14;
+    tft.drawString("3. Tap [APP] to install.", 10, y, 2); y += 14;
+    tft.drawString("4. App appears in Home.", 10, y, 2); y += 20;
     
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->drawString("How to Update Apps:", 10, y, 2); y += 18;
-    tftInstance->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    tftInstance->drawString("1. Copy updated folder.", 10, y, 2); y += 14;
-    tftInstance->drawString("2. Install and overwrite.", 10, y, 2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("How to Update Apps:", 10, y, 2); y += 18;
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.drawString("1. Copy updated folder.", 10, y, 2); y += 14;
+    tft.drawString("2. Install and overwrite.", 10, y, 2);
     
     // Back Button Footer
-    tftInstance->drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
-    tftInstance->drawString("BACK", 120, 300, 2);
+    tft.drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("BACK", 120, 300, 2);
 }
 
 // ============================================================
@@ -697,7 +696,7 @@ void InstallerUI::handleTouch(uint16_t x, uint16_t y) {
                 } else if (x >= 140 && x <= 210) { // No
                     installState = 0;
                     showActionDialog = false;
-                    tftInstance->fillScreen(TFT_BLACK);
+                    tft.fillScreen(TFT_BLACK);
                     if (selectedFile.indexOf("tmp_download") != -1) {
                         FileSystem::deleteFile((selectedFile + "app.json").c_str());
                         FileSystem::deleteFile((selectedFile + "main.js").c_str());
@@ -714,7 +713,7 @@ void InstallerUI::handleTouch(uint16_t x, uint16_t y) {
             if (x >= 85 && x <= 155 && y >= 220 && y <= 250) { // OK
                 installState = 0;
                 showActionDialog = false;
-                tftInstance->fillScreen(TFT_BLACK);
+                tft.fillScreen(TFT_BLACK);
                 if (selectedFile.indexOf("tmp_download") != -1) {
                     extern int currentState;
                     currentState = 13;
@@ -746,7 +745,7 @@ void InstallerUI::handleTouch(uint16_t x, uint16_t y) {
                 } else if (x >= 135 && x <= 215) { // Cancel clicked
                     installState = 0;
                     showActionDialog = false;
-                    tftInstance->fillScreen(TFT_BLACK);
+                    tft.fillScreen(TFT_BLACK);
                     if (selectedFile.indexOf("tmp_download") != -1) {
                         FileSystem::deleteFile((selectedFile + "app.json").c_str());
                         FileSystem::deleteFile((selectedFile + "main.js").c_str());
@@ -770,15 +769,15 @@ void InstallerUI::handleTouch(uint16_t x, uint16_t y) {
             currentState = 2; // STATE_RUN_APP
             showActionDialog = false;
             
-            tftInstance->fillScreen(TFT_BLACK);
-            tftInstance->setTextDatum(TL_DATUM);
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextDatum(TL_DATUM);
             
             HarixKernel::runFile(selectedFile.c_str());
             
-            tftInstance->fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
-            tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-            tftInstance->setTextDatum(MC_DATUM);
-            tftInstance->drawString("X", 220, 15, 2);
+            tft.fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
+            tft.setTextColor(TFT_WHITE, TFT_RED);
+            tft.setTextDatum(MC_DATUM);
+            tft.drawString("X", 220, 15, 2);
         }
         // Install clicked (legacy single-file install)
         else if (x >= 90 && x <= 150 && y >= 120 && y <= 150) {
@@ -814,7 +813,7 @@ void InstallerUI::handleTouch(uint16_t x, uint16_t y) {
         else if (x >= 160 && x <= 220 && y >= 120 && y <= 150) {
             installState = 0;
             showActionDialog = false;
-            tftInstance->fillScreen(TFT_BLACK);
+            tft.fillScreen(TFT_BLACK);
             drawFileList();
         }
         return;

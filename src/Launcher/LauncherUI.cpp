@@ -4,7 +4,6 @@
 
 extern int currentState;
 
-TFT_eSPI *LauncherUI::tftInstance = nullptr;
 String LauncherUI::appPaths[50];
 String LauncherUI::appNames[50];
 bool   LauncherUI::appIsFolder[50];
@@ -15,10 +14,6 @@ bool LauncherUI::needsRescan = true;
 
 void LauncherUI::requestRescan() {
     needsRescan = true;
-}
-
-void LauncherUI::init(TFT_eSPI *tft) {
-    tftInstance = tft;
 }
 
 void LauncherUI::scanLocalApps() {
@@ -35,9 +30,7 @@ void LauncherUI::scanLocalApps() {
         
         for (int i = 0; i < count && appCount < 50; i++) {
             // Draw loading bar
-            if (tftInstance) {
-                tftInstance->fillRect(20, 200, (i * 200) / count, 10, TFT_GREEN);
-            }
+            tft.fillRect(20, 200, (i * 200) / count, 10, TFT_GREEN);
             
             if (entries[i].isDir) {
                 // Check if it's an app package (has app.json)
@@ -86,23 +79,23 @@ void LauncherUI::scanLocalApps() {
 }
 
 void LauncherUI::draw() {
-    if (!tftInstance) return;
     
-    tftInstance->drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
-    tftInstance->fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK); // Header bg
-    tftInstance->drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
-    tftInstance->setTextColor(TFT_GREEN, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
-    tftInstance->drawString("KryonOS Home", 120, 21, 2);
+    
+    tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
+    tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK); // Header bg
+    tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("KryonOS Home", 120, 21, 2);
     
     // Clear only the list area to prevent full screen flicker
-    tftInstance->fillRect(10, 45, 220, 230, TFT_BLACK);
+    tft.fillRect(10, 45, 220, 230, TFT_BLACK);
 
     if (needsRescan) {
         scanLocalApps();
         needsRescan = false;
         // Re-clear after scanning as the loading bar might have been drawn
-        tftInstance->fillRect(10, 45, 220, 230, TFT_BLACK);
+        tft.fillRect(10, 45, 220, 230, TFT_BLACK);
     }
 
     int totalItems = appCount + 6; // +6 for SYSTEM, 4 system apps, APPS
@@ -128,21 +121,21 @@ void LauncherUI::draw() {
         }
         
         if (isHeader) {
-            tftInstance->fillRect(10, yPos, 220, 25, TFT_BLACK);
-            tftInstance->setTextColor(TFT_DARKGREY, TFT_BLACK);
-            tftInstance->setTextDatum(ML_DATUM);
-            tftInstance->drawString(itemName.c_str(), 15, yPos + 12, 2);
+            tft.fillRect(10, yPos, 220, 25, TFT_BLACK);
+            tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            tft.setTextDatum(ML_DATUM);
+            tft.drawString(itemName.c_str(), 15, yPos + 12, 2);
         } else if (listIndex == selectedIndex) {
             // Highlighted Item
-            tftInstance->fillRect(10, yPos, 220, 25, TFT_WHITE);
-            tftInstance->setTextColor(TFT_BLACK, TFT_WHITE);
-            tftInstance->setTextDatum(ML_DATUM);
-            tftInstance->drawString(("> " + itemName).c_str(), 15, yPos + 12, 2);
+            tft.fillRect(10, yPos, 220, 25, TFT_WHITE);
+            tft.setTextColor(TFT_BLACK, TFT_WHITE);
+            tft.setTextDatum(ML_DATUM);
+            tft.drawString(("> " + itemName).c_str(), 15, yPos + 12, 2);
         } else {
             // Normal Item
-            tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-            tftInstance->setTextDatum(ML_DATUM);
-            tftInstance->drawString(("  " + itemName).c_str(), 15, yPos + 12, 2);
+            tft.setTextColor(TFT_WHITE, TFT_BLACK);
+            tft.setTextDatum(ML_DATUM);
+            tft.drawString(("  " + itemName).c_str(), 15, yPos + 12, 2);
         }
         
         yPos += 30;
@@ -158,27 +151,27 @@ void LauncherUI::draw() {
         int maxThumbY = sbHeight - thumbHeight;
         int thumbY = sbY + (scrollOffset * maxThumbY) / (totalItems - itemsPerPage);
         
-        tftInstance->fillRect(sbX, sbY, 3, sbHeight, TFT_DARKGREY);
-        tftInstance->fillRect(sbX, thumbY, 3, thumbHeight, TFT_WHITE);
+        tft.fillRect(sbX, sbY, 3, sbHeight, TFT_DARKGREY);
+        tft.fillRect(sbX, thumbY, 3, thumbHeight, TFT_WHITE);
     }
 
     // Touch Footer
-    tftInstance->drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
-    tftInstance->setTextColor(TFT_WHITE, TFT_BLACK);
-    tftInstance->setTextDatum(MC_DATUM);
-    tftInstance->drawString("UP", 30, 300, 2);
-    tftInstance->drawString("|", 60, 300, 2);
-    tftInstance->drawString("SEL", 120, 300, 2);
-    tftInstance->drawString("|", 180, 300, 2);
-    tftInstance->drawString("DN", 210, 300, 2);
+    tft.drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("UP", 30, 300, 2);
+    tft.drawString("|", 60, 300, 2);
+    tft.drawString("SEL", 120, 300, 2);
+    tft.drawString("|", 180, 300, 2);
+    tft.drawString("DN", 210, 300, 2);
 }
 
-static void runApp(TFT_eSPI* tft, const String& path, bool isFolder) {
+static void runApp(const String& path, bool isFolder) {
     extern int currentState;
     currentState = 2; // STATE_RUN_APP
     
-    tft->fillScreen(TFT_BLACK);
-    tft->setTextDatum(TL_DATUM);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(TL_DATUM);
     
     String filePath;
     if (isFolder) {
@@ -192,10 +185,10 @@ static void runApp(TFT_eSPI* tft, const String& path, bool isFolder) {
     HarixKernel::runFile(filePath.c_str());
     
     // Draw exit button
-    tft->fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
-    tft->setTextColor(TFT_WHITE, TFT_RED);
-    tft->setTextDatum(MC_DATUM);
-    tft->drawString("X", 220, 15, 2);
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("X", 220, 15, 2);
 }
 
 void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
@@ -223,7 +216,7 @@ void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
                 currentState = 14; // STATE_HELP_CENTER
             } else if (selectedIndex > 5) {
                 int appIndex = selectedIndex - 6;
-                runApp(tftInstance, appPaths[appIndex], appIsFolder[appIndex]);
+                runApp(appPaths[appIndex], appIsFolder[appIndex]);
             }
         }
         return;
@@ -259,7 +252,7 @@ void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
                 currentState = 14; // STATE_HELP_CENTER
             } else if (selectedIndex > 5) {
                 int appIndex = selectedIndex - 6;
-                runApp(tftInstance, appPaths[appIndex], appIsFolder[appIndex]);
+                runApp(appPaths[appIndex], appIsFolder[appIndex]);
             }
         } else if (x > 180) { // DN
             if (selectedIndex < totalItems - 1) {

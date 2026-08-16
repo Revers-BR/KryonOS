@@ -1,12 +1,11 @@
 #ifndef SETTINGS_UI_H
 #define SETTINGS_UI_H
 
-#include <TFT_eSPI.h>
-#include "Touch/TouchScreen.h"
+#include <Arduino.h>
+#include "Board.h"
 
 class SettingsUI {
 public:
-    static void init(TFT_eSPI *tft, TouchScreen *touch);
     static void draw();
     static void handleTouch(uint16_t x, uint16_t y);
 
@@ -30,10 +29,6 @@ public:
     static void drawUpdater(bool isBootCheck = false);
     static void handleUpdaterTouch(uint16_t x, uint16_t y);
     static bool checkUpdateSilent();
-
-private:
-    static TFT_eSPI *tftInstance;
-    static TouchScreen *touchInstance;
 };
 
 #endif // SETTINGS_UI_H

@@ -4,6 +4,7 @@
 #include <TFT_eSPI.h>
 #include <Arduino.h>
 #include "../File System/FileSystem.h"
+#include "Board.h"
 
 struct AppMetadata {
     String name;

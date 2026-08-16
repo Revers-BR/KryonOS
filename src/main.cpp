@@ -1,12 +1,14 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
-#include "Touch/TouchScreen.h"
+#include <Preferences.h>
+#include <esp_heap_caps.h>
+
+#include "boards/Board.h"
 #include "File System/FileSystem.h"
 #include "Launcher/LauncherUI.h"
 #include "Settings/SettingsUI.h"
 #include "Launcher/InstallerUI.h"
-#include "Settings/TouchCalibrator.h"
 #include "Keyboard/MyKeyboard.h"
 #include "WebManager/WebManager.h"
 #include "Runtime/JSBindings.h"
@@ -16,67 +18,50 @@
 #include "Launcher/AppStoreUI.h"
 #include "Launcher/HelpCenterUI.h"
 
-// Define states
-#define STATE_LAUNCHER 0
-#define STATE_SETTINGS 1
-#define STATE_RUN_APP 2
-#define STATE_INSTALLER 3
-#define STATE_CALIBRATOR 4
-#define STATE_WEB_APP 5
-#define STATE_SETTINGS_WIFI 6
-#define STATE_SETTINGS_ABOUT 7
-#define STATE_SETTINGS_APPS 8
-#define STATE_SETTINGS_TIME 9
+// Definição dos Estados
+#define STATE_LAUNCHER          0
+#define STATE_SETTINGS          1
+#define STATE_RUN_APP           2
+#define STATE_INSTALLER         3
+#define STATE_WEB_APP           5
+#define STATE_SETTINGS_WIFI     6
+#define STATE_SETTINGS_ABOUT    7
+#define STATE_SETTINGS_APPS     8
+#define STATE_SETTINGS_TIME     9
 #define STATE_SETTINGS_TIME_MANUAL 10
-#define STATE_UPDATER_BOOT 11
-#define STATE_UPDATER_MANUAL 12
-#define STATE_APP_STORE 13
-#define STATE_HELP_CENTER 14
-
+#define STATE_UPDATER_BOOT      11
+#define STATE_UPDATER_MANUAL    12
+#define STATE_APP_STORE         13
+#define STATE_HELP_CENTER       14
 
 int currentState = STATE_LAUNCHER;
-TFT_eSPI tft = TFT_eSPI();
-TouchScreen touch;
+
+// Declaração da referência externa do TFT criada no Board.cpp
+extern TFT_eSPI tft;
 
 void setup() {
     Serial.begin(115200);
-
-#if defined(PWR_ON_PIN) | defined(PWR_EN_PIN)
-
-  pinMode(PWR_ON_PIN, OUTPUT);
-  digitalWrite(PWR_ON_PIN, HIGH);
-
-  delay(10);
-  Serial.println(F("Turn on the main power"));
-
-  Serial.println(F("Power on peripherals, such as the LCD backlight"));
-  pinMode(PWR_EN_PIN, OUTPUT);
-  digitalWrite(PWR_EN_PIN, HIGH);
-
-#endif
-    delay(1000);
+    delay(500);
     Serial.println("\n--- KryonOS Booting ---");
 
-    // Init TFT
-    tft.init();
-    tft.setRotation(0);
-    tft.fillScreen(TFT_BLACK);
+    // 1. Inicialização de Hardware e Display via Board
+    initHardware();
+    initDisplay();
+    initTouch();
+
+    // Tela de Boot Inicial
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
     tft.drawString("Booting KryonOS...", 120, 160, 2);
 
-    touch.init(&tft);
-
-    // Initialize File Systems (LittleFS & SD)
+    // 3. Sistemas de Arquivos e Horário
     if (!FileSystem::init()) {
-        Serial.println("File System Warning: One or more FS failed to mount.");
+        Serial.println("File System Warning: Failed to mount.");
         tft.drawString("FS Mount Warning!", 120, 180, 2);
         delay(1000);
     }
-    
-    // Initialize Time Manager
     TimeManager::init();
-    
+
     // Initialize Web Manager (Only if not disabled)
     if (!FileSystem::exists("/local/nowifi.txt")) {
         tft.fillScreen(TFT_BLACK);
@@ -93,22 +78,7 @@ void setup() {
     }
     Serial.printf("DEBUG: Free heap before Kernel: %u\n", ESP.getFreeHeap());
 
-    // Initialize JS Runtime
-    Serial.println("DEBUG: Starting HarixKernel...");
-    HarixKernel::init(&tft, &touch);
-    Serial.println("HarixKernel initialized successfully.");
-    Serial.printf("DEBUG: Free heap after Kernel: %u\n", ESP.getFreeHeap());
-
-    // Init UI Components
-    LauncherUI::init(&tft);
-    SettingsUI::init(&tft, &touch);
-    InstallerUI::init(&tft);
-    TouchCalibrator::init(&tft);
-    MyKeyboard::init(&tft, &touch);
-    WebServerAppUI::init(&tft);
-    AppStoreUI::init(&tft);
-    HelpCenterUI::init(&tft);
-
+    // 6. Scan de Aplicações
     // Initial App Scan (with loading bar)
     Serial.println("DEBUG: Scanning Local Apps...");
     tft.fillScreen(TFT_BLACK);
@@ -118,28 +88,17 @@ void setup() {
     LauncherUI::needsRescan = false;
     Serial.println("DEBUG: Local Apps Scanned.");
 
-    // Attempt to read touch calibration
-    Serial.println("DEBUG: Reading CalData...");
-    uint16_t calData[5];
-    if (FileSystem::readCalData(calData)) {
-        Serial.println("Calibration data found and loaded.");
-        // tft.setTouch(calData);
-        currentState = STATE_LAUNCHER;
-    } else {
-        Serial.println("No calibration data. Entering calibrator.");
-        currentState = STATE_CALIBRATOR;
-    }
-    
-    // Check for updates on boot
+    LauncherUI::scanLocalApps();
+    LauncherUI::needsRescan = false;
+
+        // Check for updates on boot
     if (currentState == STATE_LAUNCHER && WiFi.status() == WL_CONNECTED) {
         Serial.println("DEBUG: Checking for updates...");
         if (SettingsUI::checkUpdateSilent()) {
             currentState = STATE_UPDATER_BOOT;
         }
     }
-    
-    Serial.println("DEBUG: Setup complete, entering loop!");
-    
+
     // Initial draw
     if (currentState == STATE_LAUNCHER) {
         LauncherUI::draw();
@@ -147,20 +106,19 @@ void setup() {
         SettingsUI::drawUpdater(true);
     }
 }
-
 int lastState = -1; // To trigger draws on state change
 
 void loop() {
-
+    // Redesenho de Interface em Troca de Estados
     if (currentState != lastState) {
         if (currentState != STATE_RUN_APP) {
-            tft.fillScreen(TFT_BLACK); // Completely wipe screen when changing states!
+            tft.fillScreen(TFT_BLACK);
         }
         int oldState = currentState;
+
         if (currentState == STATE_LAUNCHER) LauncherUI::draw();
         else if (currentState == STATE_SETTINGS) SettingsUI::draw();
         else if (currentState == STATE_INSTALLER) InstallerUI::draw();
-        else if (currentState == STATE_CALIBRATOR) TouchCalibrator::runCalibration();
         else if (currentState == STATE_WEB_APP) WebServerAppUI::draw();
         else if (currentState == STATE_SETTINGS_ABOUT) SettingsUI::drawAbout();
         else if (currentState == STATE_SETTINGS_WIFI) SettingsUI::drawWiFi();
@@ -176,7 +134,7 @@ void loop() {
         if (currentState == oldState) {
             lastState = currentState;
         } else {
-            lastState = -1; // Force next iteration to draw the new state
+            lastState = -1;
         }
     }
 
@@ -184,33 +142,26 @@ void loop() {
         HelpCenterUI::update();
     }
 
-    // Basic Touch handling loop
-    bool touched = touch.isTouched();
+    // --- Tratamento Global do Touch (Usa as funções do Board.cpp diretamente) ---
+    uint16_t x, y;
+    bool touched = getTouch(&x, &y);
     
     static unsigned long lastTouchTime = 0;
     static bool wasTouched = false;
-        
+
     if (touched) {
         bool processNow = false;
-        
-        uint16_t x, y;
-        
-        touch.getTouch(&x, &y);
 
         if (!wasTouched) {
             processNow = true;
             lastTouchTime = millis();
-        } else {
-            // If held down for 300ms, start fast repeat
-            if (millis() - lastTouchTime > 300) {
-                // Only fast repeat for footer buttons (UP/DN are typically at y >= 280)
-                if (y >= 280) {
-                    processNow = true;
-                    lastTouchTime = millis() - 250; // repeat every 50ms
-                }
+        } else if (millis() - lastTouchTime > 300) {
+            if (y >= 280) { // Repetição rápida no rodapé
+                processNow = true;
+                lastTouchTime = millis() - 250;
             }
         }
-        
+
         if (processNow) {
             if (currentState == STATE_LAUNCHER) {
                 LauncherUI::handleTouch(x, y);
@@ -237,9 +188,8 @@ void loop() {
             } else if (currentState == STATE_HELP_CENTER) {
                 HelpCenterUI::handleTouch(x, y);
             } else if (currentState == STATE_RUN_APP) {
-                // Check if user touched the top-right "X" button
-                if (x >= 200 && y <= 40) {
-                    currentState = STATE_LAUNCHER; // Exit app
+                if (x >= 200 && y <= 40) { // Botão Fechar App
+                    currentState = STATE_LAUNCHER;
                 }
             }
         }
@@ -248,6 +198,5 @@ void loop() {
         wasTouched = false;
     }
 
-    // Yield to let ESP32 handle background tasks (WiFi, etc.)
     delay(10);
 }

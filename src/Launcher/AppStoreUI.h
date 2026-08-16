@@ -2,7 +2,7 @@
 #define APP_STORE_UI_H
 
 #include <Arduino.h>
-#include <TFT_eSPI.h>
+#include "Board.h"
 
 struct AppStoreItem {
     String id;
@@ -16,7 +16,6 @@ struct AppStoreItem {
 
 class AppStoreUI {
 public:
-    static void init(TFT_eSPI *tft);
     static void draw();
     static void handleTouch(uint16_t x, uint16_t y);
 
@@ -30,8 +29,6 @@ public:
     static bool isUpdateMode;
     
 private:
-    static TFT_eSPI *tftInstance;
-    
     // UI State
     static int selectedIndex;
     static int scrollOffset;

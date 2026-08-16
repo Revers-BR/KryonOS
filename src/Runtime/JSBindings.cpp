@@ -5,9 +5,6 @@
 #include "../Kernel/TimeManager.h"
 #include <SPI.h>
 
-TFT_eSPI* JSBindings::tftInstance = nullptr;
-TouchScreen* JSBindings::touchInstance = nullptr;
-
 TFT_eSprite* JSBindings::tftSprite = nullptr;
 bool JSBindings::useSprite = false;
 
@@ -18,11 +15,9 @@ void JSBindings::fatalErrorHandler(void *udata, const char *msg) {
     
     if (msg && strstr(msg, "alloc")) {
         Serial.println("out of memory");
-        if (tftInstance) {
-            if (useSprite && tftSprite) tftSprite->fillScreen(TFT_RED); else tftInstance->fillScreen(TFT_RED);
-            if (useSprite && tftSprite) tftSprite->setTextColor(TFT_WHITE, TFT_RED); else tftInstance->setTextColor(TFT_WHITE, TFT_RED);
-            if (useSprite && tftSprite) tftSprite->drawString("OUT OF MEMORY", 10, 10, 4); else tftInstance->drawString("OUT OF MEMORY", 10, 10, 4);
-        }
+        if (useSprite && tftSprite) tftSprite->fillScreen(TFT_RED); else tft.fillScreen(TFT_RED);
+        if (useSprite && tftSprite) tftSprite->setTextColor(TFT_WHITE, TFT_RED); else tft.setTextColor(TFT_WHITE, TFT_RED);
+        if (useSprite && tftSprite) tftSprite->drawString("OUT OF MEMORY", 10, 10, 4); else tft.drawString("OUT OF MEMORY", 10, 10, 4);
     }
     
     abort();
@@ -86,7 +81,7 @@ duk_ret_t JSBindings::js_pulseIn(duk_context *ctx) {
 // =====================================================
 
 duk_ret_t JSBindings::js_createSprite(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
 
     int w = duk_require_int(ctx, 0);
     int h = duk_require_int(ctx, 1);
@@ -97,7 +92,7 @@ duk_ret_t JSBindings::js_createSprite(duk_context *ctx) {
         tftSprite = nullptr;
     }
     
-    tftSprite = new TFT_eSprite(tftInstance);
+    tftSprite = new TFT_eSprite(&tft);
     
     void* ptr = nullptr;
     
@@ -135,7 +130,6 @@ duk_ret_t JSBindings::js_deleteSprite(duk_context *ctx) {
 }
 
 duk_ret_t JSBindings::js_pushSprite(duk_context *ctx) {
-    if (!tftInstance || !tftSprite) return 0;
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     tftSprite->pushSprite(x, y);
@@ -150,24 +144,24 @@ duk_ret_t JSBindings::js_bindSprite(duk_context *ctx) {
 }
 
 duk_ret_t JSBindings::js_drawFastVLine(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int h = duk_require_int(ctx, 2);
     uint32_t color = duk_require_uint(ctx, 3);
     if (useSprite && tftSprite) tftSprite->drawFastVLine(x, y, h, color);
-    else tftInstance->drawFastVLine(x, y, h, color);
+    else tft.drawFastVLine(x, y, h, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawFastHLine(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int w = duk_require_int(ctx, 2);
     uint32_t color = duk_require_uint(ctx, 3);
     if (useSprite && tftSprite) tftSprite->drawFastHLine(x, y, w, color);
-    else tftInstance->drawFastHLine(x, y, w, color);
+    else tft.drawFastHLine(x, y, w, color);
     return 0;
 }
 
@@ -176,76 +170,76 @@ duk_ret_t JSBindings::js_drawFastHLine(duk_context *ctx) {
 // =====================================================
 
 duk_ret_t JSBindings::js_fillScreen(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     uint32_t color = duk_require_uint(ctx, 0);
-    if (useSprite && tftSprite) tftSprite->fillScreen(color); else tftInstance->fillScreen(color);
+    if (useSprite && tftSprite) tftSprite->fillScreen(color); else tft.fillScreen(color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_fillRect(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int w = duk_require_int(ctx, 2);
     int h = duk_require_int(ctx, 3);
     uint32_t color = duk_require_uint(ctx, 4);
-    if (useSprite && tftSprite) tftSprite->fillRect(x, y, w, h, color); else tftInstance->fillRect(x, y, w, h, color);
+    if (useSprite && tftSprite) tftSprite->fillRect(x, y, w, h, color); else tft.fillRect(x, y, w, h, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawRect(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int w = duk_require_int(ctx, 2);
     int h = duk_require_int(ctx, 3);
     uint32_t color = duk_require_uint(ctx, 4);
-    if (useSprite && tftSprite) tftSprite->drawRect(x, y, w, h, color); else tftInstance->drawRect(x, y, w, h, color);
+    if (useSprite && tftSprite) tftSprite->drawRect(x, y, w, h, color); else tft.drawRect(x, y, w, h, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawLine(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x0 = duk_require_int(ctx, 0);
     int y0 = duk_require_int(ctx, 1);
     int x1 = duk_require_int(ctx, 2);
     int y1 = duk_require_int(ctx, 3);
     uint32_t color = duk_require_uint(ctx, 4);
-    if (useSprite && tftSprite) tftSprite->drawLine(x0, y0, x1, y1, color); else tftInstance->drawLine(x0, y0, x1, y1, color);
+    if (useSprite && tftSprite) tftSprite->drawLine(x0, y0, x1, y1, color); else tft.drawLine(x0, y0, x1, y1, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawPixel(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     uint32_t color = duk_require_uint(ctx, 2);
-    if (useSprite && tftSprite) tftSprite->drawPixel(x, y, color); else tftInstance->drawPixel(x, y, color);
+    if (useSprite && tftSprite) tftSprite->drawPixel(x, y, color); else tft.drawPixel(x, y, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawCircle(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int r = duk_require_int(ctx, 2);
     uint32_t color = duk_require_uint(ctx, 3);
-    if (useSprite && tftSprite) tftSprite->drawCircle(x, y, r, color); else tftInstance->drawCircle(x, y, r, color);
+    if (useSprite && tftSprite) tftSprite->drawCircle(x, y, r, color); else tft.drawCircle(x, y, r, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_fillCircle(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int r = duk_require_int(ctx, 2);
     uint32_t color = duk_require_uint(ctx, 3);
-    if (useSprite && tftSprite) tftSprite->fillCircle(x, y, r, color); else tftInstance->fillCircle(x, y, r, color);
+    if (useSprite && tftSprite) tftSprite->fillCircle(x, y, r, color); else tft.fillCircle(x, y, r, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawTriangle(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x0 = duk_require_int(ctx, 0);
     int y0 = duk_require_int(ctx, 1);
     int x1 = duk_require_int(ctx, 2);
@@ -253,12 +247,12 @@ duk_ret_t JSBindings::js_drawTriangle(duk_context *ctx) {
     int x2 = duk_require_int(ctx, 4);
     int y2 = duk_require_int(ctx, 5);
     uint32_t color = duk_require_uint(ctx, 6);
-    if (useSprite && tftSprite) tftSprite->drawTriangle(x0, y0, x1, y1, x2, y2, color); else tftInstance->drawTriangle(x0, y0, x1, y1, x2, y2, color);
+    if (useSprite && tftSprite) tftSprite->drawTriangle(x0, y0, x1, y1, x2, y2, color); else tft.drawTriangle(x0, y0, x1, y1, x2, y2, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_fillTriangle(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x0 = duk_require_int(ctx, 0);
     int y0 = duk_require_int(ctx, 1);
     int x1 = duk_require_int(ctx, 2);
@@ -266,31 +260,31 @@ duk_ret_t JSBindings::js_fillTriangle(duk_context *ctx) {
     int x2 = duk_require_int(ctx, 4);
     int y2 = duk_require_int(ctx, 5);
     uint32_t color = duk_require_uint(ctx, 6);
-    if (useSprite && tftSprite) tftSprite->fillTriangle(x0, y0, x1, y1, x2, y2, color); else tftInstance->fillTriangle(x0, y0, x1, y1, x2, y2, color);
+    if (useSprite && tftSprite) tftSprite->fillTriangle(x0, y0, x1, y1, x2, y2, color); else tft.fillTriangle(x0, y0, x1, y1, x2, y2, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_drawRoundRect(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int w = duk_require_int(ctx, 2);
     int h = duk_require_int(ctx, 3);
     int r = duk_require_int(ctx, 4);
     uint32_t color = duk_require_uint(ctx, 5);
-    if (useSprite && tftSprite) tftSprite->drawRoundRect(x, y, w, h, r, color); else tftInstance->drawRoundRect(x, y, w, h, r, color);
+    if (useSprite && tftSprite) tftSprite->drawRoundRect(x, y, w, h, r, color); else tft.drawRoundRect(x, y, w, h, r, color);
     return 0;
 }
 
 duk_ret_t JSBindings::js_fillRoundRect(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int x = duk_require_int(ctx, 0);
     int y = duk_require_int(ctx, 1);
     int w = duk_require_int(ctx, 2);
     int h = duk_require_int(ctx, 3);
     int r = duk_require_int(ctx, 4);
     uint32_t color = duk_require_uint(ctx, 5);
-    if (useSprite && tftSprite) tftSprite->fillRoundRect(x, y, w, h, r, color); else tftInstance->fillRoundRect(x, y, w, h, r, color);
+    if (useSprite && tftSprite) tftSprite->fillRoundRect(x, y, w, h, r, color); else tft.fillRoundRect(x, y, w, h, r, color);
     return 0;
 }
 
@@ -310,15 +304,23 @@ static uint32_t read32(fs::File &f) {
   ((uint8_t *)&result)[3] = f.read(); // MSB
   return result;
 }
-
+// ====================================================================================================
+// BINDING DUKTAPE: js_drawBMP
+// ====================================================================================================
 duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
-    if (!tftInstance) return 0;
-    const char *path = duk_require_string(ctx, 0);
-    int x = duk_require_int(ctx, 1);
-    int y = duk_require_int(ctx, 2);
+    // 1. Validação de argumentos do Duktape
+    if (!duk_is_string(ctx, 0) || !duk_is_number(ctx, 1) || !duk_is_number(ctx, 2)) {
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+
+    const char *path = duk_get_string(ctx, 0);
+    int x = duk_get_int(ctx, 1);
+    int y = duk_get_int(ctx, 2);
 
     fs::FS* targetFS = nullptr;
     String relPath = "";
+
     if (strncmp(path, "/sd", 3) == 0) {
 #ifdef SD_CS_PIN
         targetFS = &SD;
@@ -326,21 +328,34 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
         targetFS = &SD_MMC;
 #endif
         relPath = String(path).substring(3);
-        if (!relPath.startsWith("/")) relPath = "/" + relPath;
     } else if (strncmp(path, "/local", 6) == 0) {
         targetFS = &LittleFS;
         relPath = String(path).substring(6);
-        if (!relPath.startsWith("/")) relPath = "/" + relPath;
     } else {
         duk_push_boolean(ctx, 0);
         return 1;
     }
 
-    fs::File bmpFS = targetFS->open(relPath, FILE_READ);
-    if (!bmpFS) { Serial.printf("BMP ERR: Could not open file %s\n", relPath.c_str()); duk_push_boolean(ctx, 0); return 1; }
+    if (!relPath.startsWith("/")) relPath = "/" + relPath;
 
+    // 2. Abertura e checagem de existência do arquivo
+    if (!targetFS || !targetFS->exists(relPath)) {
+        Serial.printf("BMP ERR: File does not exist %s\n", relPath.c_str());
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+
+    fs::File bmpFS = targetFS->open(relPath, FILE_READ);
+    if (!bmpFS || bmpFS.isDirectory()) {
+        Serial.printf("BMP ERR: Could not open file %s\n", relPath.c_str());
+        if (bmpFS) bmpFS.close();
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+
+    // 3. Validação do Cabeçalho BMP
     uint16_t sig = read16(bmpFS);
-    if (sig != 0x4D42) { // "BM" signature
+    if (sig != 0x4D42) { // "BM"
         Serial.printf("BMP ERR: Invalid signature: 0x%04X\n", sig);
         bmpFS.close();
         duk_push_boolean(ctx, 0);
@@ -349,21 +364,28 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
 
     read32(bmpFS); // File size
     read32(bmpFS); // Creator bytes
-    uint32_t imageOffset = read32(bmpFS); // Pixel data offset
+    uint32_t imageOffset = read32(bmpFS);
     read32(bmpFS); // DIB header size
     int32_t bmpWidth = read32(bmpFS);
     int32_t bmpHeight = read32(bmpFS);
-    
-    uint16_t planes = read16(bmpFS);
-    if (planes != 1) { // Planes must be 1
-        Serial.printf("BMP ERR: Invalid planes: %d\n", planes);
+
+    // Validação de dimensões absurdas/corrompidas
+    if (bmpWidth <= 0 || bmpWidth > 2048 || bmpHeight == 0 || abs(bmpHeight) > 2048) {
+        Serial.printf("BMP ERR: Invalid dimensions (%dx%d)\n", bmpWidth, bmpHeight);
         bmpFS.close();
         duk_push_boolean(ctx, 0);
         return 1;
     }
-    
+
+    uint16_t planes = read16(bmpFS);
+    if (planes != 1) {
+        bmpFS.close();
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+
     uint16_t bmpDepth = read16(bmpFS);
-    if (bmpDepth != 16 && bmpDepth != 24 && bmpDepth != 32) { // 16, 24, 32-bit BMPs supported
+    if (bmpDepth != 16 && bmpDepth != 24 && bmpDepth != 32) {
         Serial.printf("BMP ERR: Unsupported depth: %d\n", bmpDepth);
         bmpFS.close();
         duk_push_boolean(ctx, 0);
@@ -378,7 +400,6 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
         return 1;
     }
 
-    // Determine row size and padding
     bool flip = true;
     if (bmpHeight < 0) {
         bmpHeight = -bmpHeight;
@@ -387,52 +408,67 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
 
     uint32_t bytesPerPixel = bmpDepth / 8;
     uint32_t rowSize = (bmpWidth * bytesPerPixel + 3) & ~3;
-    uint8_t sdbuffer[4 * 64]; // Read buffer (max 4 bytes per pixel * 64 pixels)
-    uint16_t tftbuffer[64];   // Convert to 16-bit 565 colors
+    uint8_t sdbuffer[4 * 64]; // Max 64 pixels per chunk
+    uint16_t tftbuffer[64];
 
-    bmpFS.seek(imageOffset);
+    if (!bmpFS.seek(imageOffset)) {
+        bmpFS.close();
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
 
-    // Draw row by row
+    int tftW = tft.width();
+    int tftH = tft.height();
+
+    // 4. Renderização com Validação Dupla de Limites (X e Y)
     for (int row = 0; row < bmpHeight; row++) {
         int drawY = flip ? (y + bmpHeight - 1 - row) : (y + row);
-        
-        // Skip drawing if out of bounds
-        if (drawY < 0 || drawY >= tftInstance->height()) {
+
+        // Se a linha estiver fora da tela na vertical, pula a leitura no arquivo
+        if (drawY < 0 || drawY >= tftH) {
             bmpFS.seek(bmpFS.position() + rowSize);
             continue;
         }
 
         uint32_t pixelsRead = 0;
-        while (pixelsRead < bmpWidth) {
+        while (pixelsRead < (uint32_t)bmpWidth) {
             uint32_t pixelsToRead = bmpWidth - pixelsRead;
             if (pixelsToRead > 64) pixelsToRead = 64;
-            bmpFS.read(sdbuffer, pixelsToRead * bytesPerPixel);
-            
+
+            size_t bytesToRead = pixelsToRead * bytesPerPixel;
+            if (bmpFS.read(sdbuffer, bytesToRead) != bytesToRead) {
+                break; // Fim inesperado do arquivo
+            }
+
             for (uint32_t i = 0; i < pixelsToRead; i++) {
                 if (bmpDepth == 24) {
-                    uint8_t b = sdbuffer[i*3];
-                    uint8_t g = sdbuffer[i*3+1];
-                    uint8_t r = sdbuffer[i*3+2];
-                    tftbuffer[i] = tftInstance->color565(r, g, b);
+                    uint8_t b = sdbuffer[i * 3];
+                    uint8_t g = sdbuffer[i * 3 + 1];
+                    uint8_t r = sdbuffer[i * 3 + 2];
+                    tftbuffer[i] = tft.color565(r, g, b);
                 } else if (bmpDepth == 32) {
-                    uint8_t b = sdbuffer[i*4];
-                    uint8_t g = sdbuffer[i*4+1];
-                    uint8_t r = sdbuffer[i*4+2];
-                    tftbuffer[i] = tftInstance->color565(r, g, b);
+                    uint8_t b = sdbuffer[i * 4];
+                    uint8_t g = sdbuffer[i * 4 + 1];
+                    uint8_t r = sdbuffer[i * 4 + 2];
+                    tftbuffer[i] = tft.color565(r, g, b);
                 } else if (bmpDepth == 16) {
-                    uint8_t b1 = sdbuffer[i*2];
-                    uint8_t b2 = sdbuffer[i*2+1];
+                    uint8_t b1 = sdbuffer[i * 2];
+                    uint8_t b2 = sdbuffer[i * 2 + 1];
                     tftbuffer[i] = (b2 << 8) | b1;
                 }
             }
 
             int drawX = x + pixelsRead;
-            tftInstance->pushImage(drawX, drawY, pixelsToRead, 1, tftbuffer);
-            
+
+            // Validação de limite horizontal (X) antes de enviar para o display
+            if (drawX >= 0 && (drawX + (int)pixelsToRead) <= tftW) {
+                tft.pushImage(drawX, drawY, pixelsToRead, 1, tftbuffer);
+            }
+
             pixelsRead += pixelsToRead;
         }
 
-        // Skip padding
+        // Pula o padding no fim da linha
         uint32_t padding = rowSize - (bmpWidth * bytesPerPixel);
         if (padding > 0) {
             uint8_t padBuffer[4];
@@ -450,33 +486,38 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
 // =====================================================
 
 duk_ret_t JSBindings::js_drawString(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     const char *str = duk_require_string(ctx, 0);
     int x = duk_require_int(ctx, 1);
     int y = duk_require_int(ctx, 2);
     int font = duk_get_int_default(ctx, 3, 2); // default to font 2
-    tftInstance->setTextDatum(TL_DATUM);
-    if (useSprite && tftSprite) tftSprite->drawString(str, x, y, font); else tftInstance->drawString(str, x, y, font);
+    if (useSprite && tftSprite) {
+        tftSprite->setTextDatum(TL_DATUM);
+        tftSprite->drawString(str, x, y, font);
+    } else {
+        tft.setTextDatum(TL_DATUM);
+        tft.drawString(str, x, y, font);
+    }
     return 0;
 }
 
 duk_ret_t JSBindings::js_setTextColor(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     uint32_t fg = duk_require_uint(ctx, 0);
     // Optional background color (defaults to foreground = transparent)
     if (duk_is_number(ctx, 1)) {
         uint32_t bg = duk_require_uint(ctx, 1);
-        if (useSprite && tftSprite) tftSprite->setTextColor(fg, bg); else tftInstance->setTextColor(fg, bg);
+        if (useSprite && tftSprite) tftSprite->setTextColor(fg, bg); else tft.setTextColor(fg, bg);
     } else {
-        if (useSprite && tftSprite) tftSprite->setTextColor(fg); else tftInstance->setTextColor(fg);
+        if (useSprite && tftSprite) tftSprite->setTextColor(fg); else tft.setTextColor(fg);
     }
     return 0;
 }
 
 duk_ret_t JSBindings::js_setTextSize(duk_context *ctx) {
-    if (!tftInstance) return 0;
+    
     int size = duk_require_int(ctx, 0);
-    if (useSprite && tftSprite) tftSprite->setTextSize(size); else tftInstance->setTextSize(size);
+    if (useSprite && tftSprite) tftSprite->setTextSize(size); else tft.setTextSize(size);
     return 0;
 }
 
@@ -499,14 +540,12 @@ duk_ret_t JSBindings::js_color(duk_context *ctx) {
 }
 
 duk_ret_t JSBindings::js_screenWidth(duk_context *ctx) {
-    if (!tftInstance) { duk_push_int(ctx, 240); return 1; }
-    duk_push_int(ctx, tftInstance->width());
+    duk_push_int(ctx, tft.width());
     return 1;
 }
 
 duk_ret_t JSBindings::js_screenHeight(duk_context *ctx) {
-    if (!tftInstance) { duk_push_int(ctx, 320); return 1; }
-    duk_push_int(ctx, tftInstance->height());
+    duk_push_int(ctx, tft.height());
     return 1;
 }
 
@@ -517,15 +556,12 @@ duk_ret_t JSBindings::js_screenHeight(duk_context *ctx) {
 // Returns an object { x, y, touched } 
 duk_ret_t JSBindings::js_getTouch(duk_context *ctx) {
     uint16_t tx, ty;
-    bool touched = false;
-    if (touchInstance) {
-        touched = touchInstance->getTouch(&tx, &ty);
+    bool touched = getTouch(&tx, &ty);
         
-        // Hidden OS Exit Button (Top Right Corner)
-        if (touched && tx >= 200 && ty <= 40) {
-            duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
-            return 0; // Unreachable, but good practice
-        }
+    // Hidden OS Exit Button (Top Right Corner)
+    if (touched && tx >= 200 && ty <= 40) {
+        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
+        return 0; // Unreachable, but good practice
     }
     
     duk_push_object(ctx);
@@ -844,10 +880,7 @@ duk_ret_t JSBindings::js_prompt(duk_context *ctx) {
 // Init - Register ALL bindings
 // =====================================================
 
-void JSBindings::init(duk_context *ctx, TFT_eSPI *tft, TouchScreen *touch) {
-    tftInstance = tft;
-    touchInstance = touch;
-
+void JSBindings::init(duk_context *ctx) {
     // --- System Object ---
     duk_push_global_object(ctx);
     duk_push_object(ctx); // System

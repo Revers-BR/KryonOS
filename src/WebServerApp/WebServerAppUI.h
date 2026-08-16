@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
-#include <TFT_eSPI.h>
+#include "Board.h"
 
 class WebServerAppUI {
 private:
-    static TFT_eSPI *tftInstance;
 
 public:
     static void init(TFT_eSPI *tft);
