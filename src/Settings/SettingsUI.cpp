@@ -240,14 +240,9 @@ void SettingsUI::drawAbout() {
     uint64_t fsUsed = LittleFS.usedBytes();
     uint64_t fsFree = fsTotal - fsUsed;
 
-    uint64_t sdTotal, sdUsed = SD.usedBytes();
-#ifdef SD_CS_PIN
-    sdTotal = SD.totalBytes();
-    sdUsed = SD.usedBytes();
-#else
-    sdTotal = SD_MMC.totalBytes();
-    sdUsed = SD_MMC.usedBytes();
-#endif
+    uint64_t sdTotal, sdUsed = 0;
+    sdTotal = getSDTotalBytes();
+    sdUsed = getSDUsedBytes();
     uint64_t sdFree = sdTotal - sdUsed;
 
     tft.setTextColor(TFT_CYAN, TFT_BLACK);

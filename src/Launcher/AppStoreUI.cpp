@@ -93,11 +93,7 @@ bool AppStoreUI::downloadFile(const String& url, const String& destPath, const S
     String relPath = destPath;
 
     if (destPath.startsWith("/sd/")) {
-    #ifdef SD_CS_PIN
-        targetFS = &SD;
-    #else
-        targetFS = &SD_MMC;
-    #endif
+        targetFS = initSD();
         relPath = destPath.substring(3);
     } else if (destPath.startsWith("/local/")) {
         targetFS = &LittleFS;
@@ -296,11 +292,7 @@ bool AppStoreUI::checkUpdates() {
     }
     
     for (int i=0; i<2; i++) {
-    #ifdef SD_CS_PIN
-        fs::FS* targetFS = (i == 0) ? (fs::FS*)&SD : (fs::FS*)&LittleFS;
-    #else
-        fs::FS* targetFS = (i == 0) ? (fs::FS*)&SD_MMC : (fs::FS*)&LittleFS;
-    #endif
+        fs::FS* targetFS = (i == 0) ? (fs::FS*)initSD() : (fs::FS*)&LittleFS;
         if (!targetFS->exists("/apps")) continue;
         
         File root = targetFS->open("/apps");

@@ -1,48 +1,7 @@
 #include "FileSystem.h"
+#include "Board.h"
 
 fs::FS* FileSystem::_fs = nullptr;
-
-SPIClass sdSPI(HSPI);
-
-bool FileSystem::initMMC() {
-    SD_MMC.setPins(SD_SCLK_PIN, SD_MOSI_PIN, SD_MISO_PIN);
-    if (!SD_MMC.begin("/sd", true)) {
-        Serial.println("[SDManager] Mount failed. Check pins and card format (FAT32).");
-        return false;
-    }
-
-    uint8_t cardType = SD_MMC.cardType();
-    if (cardType == CARD_NONE) {
-        Serial.println("[SDManager] No SD card detected.");
-        return false;
-    }
-
-    _fs = &SD_MMC;
-    Serial.printf("[SDManager] Mounted. Size: %llu MB\n", SD_MMC.cardSize() / (1024 * 1024));
-    return true;
-}
-
-bool FileSystem::initSD() {
-
-#ifdef SD_CS_PIN
-    // Initialize dedicated SPI bus for SD Card (HSPI pins: SCK=14, MISO=26, MOSI=13, CS=15)
-    sdSPI.begin(SD_SCLK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
-    
-    // Initialize SD Card
-    if (!SD.begin(15, sdSPI, 4000000)) {
-        Serial.println("SD Card Mount Failed");
-        return false;
-    } else {
-        Serial.println("SD Card Mount Successful");
-    }
-
-    _fs = &SD;
-
-    return true;
-#endif
-
-    return false;
-}
 
 bool FileSystem::init() {
     bool success = true;
@@ -56,11 +15,13 @@ bool FileSystem::init() {
         if (!LittleFS.exists("/apps")) LittleFS.mkdir("/apps");
     }
 
-#ifdef SD_CS_PIN
-    success = initSD();
-#else
-    success = initMMC();
-#endif
+    _fs = initSD();
+
+    if(_fs == nullptr){
+        Serial.println("SD Mount Failed");
+        success = false;
+    };
+
     return success;
 }
 
@@ -694,31 +655,13 @@ String FileSystem::getFileMD5(const char* path) {
 }
 
 bool FileSystem::mountSD() {
-#ifdef SD_CS_PIN
-    if (SD.begin(SD_CS_PIN, sdSPI, 4000000)) {
-        _fs = &SD; // Atribui o ponteiro para o SD
-        return true;
-    }
-#else
-    // SD_MMC.begin(mountpoint, mode1bit, format_if_mount_failed)
-    if (SD_MMC.begin("/sd", true)) {
-        _fs = &SD_MMC; // Atribui o ponteiro para o SD_MMC
-        return true;
-    }
-#endif
-
-    _fs = nullptr;
-    return false;
+        _fs = initSD(); // Atribui o ponteiro para o SD
+        return _fs != nullptr;
 }
 
 void FileSystem::unmountSD() {
-    _fs = nullptr; // Zera o ponteiro de arquivo antes de desmontar
-    
-#ifdef SD_CS_PIN
-    SD.end();
-#else
-    SD_MMC.end();
-#endif
+    deinitSD();
+    _fs = nullptr;
 }
 
 bool FileSystem::formatSD() {

@@ -72,9 +72,6 @@ private:
     template <typename Func>
     static auto withFile(const char* path, const char* mode, Func action) 
         -> decltype(action(std::declval<File&>()));
-
-    static bool initMMC();
-    static bool initSD();
 };
 
 template <typename Func>

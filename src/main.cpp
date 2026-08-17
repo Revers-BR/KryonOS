@@ -48,6 +48,7 @@ void setup() {
     initHardware();
     initDisplay();
     initTouch();
+    initSD();
 
     // Tela de Boot Inicial
     tft.setTextColor(TFT_WHITE, TFT_BLACK);

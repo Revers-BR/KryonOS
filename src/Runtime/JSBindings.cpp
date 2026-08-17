@@ -322,11 +322,7 @@ duk_ret_t JSBindings::js_drawBMP(duk_context *ctx) {
     String relPath = "";
 
     if (strncmp(path, "/sd", 3) == 0) {
-#ifdef SD_CS_PIN
-        targetFS = &SD;
-#else
-        targetFS = &SD_MMC;
-#endif
+        targetFS = initSD();
         relPath = String(path).substring(3);
     } else if (strncmp(path, "/local", 6) == 0) {
         targetFS = &LittleFS;
