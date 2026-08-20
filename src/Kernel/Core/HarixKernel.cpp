@@ -89,16 +89,25 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
             tft.drawString("setting to free the ram", 10, 80, 2);
             tft.drawString("and make this app running", 10, 100, 2);
             
-            // Draw an 'X' to close
+            // Draw an 'X' to close (com instrução visual de tecla para o Cardputer)
             tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
             tft.setTextColor(TFT_RED, TFT_WHITE);
             tft.drawString("X", 215, 8, 2);
             
             uint16_t tx, ty;
             while(true) {
+                // 1. Checa por Touch no botão 'X'
                 if (getTouch(&tx, &ty)) {
                     if (tx >= 200 && ty <= 40) break;
                 }
+                
+                // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
+                BoardKey key = getKeyInput();
+                if (key != BOARD_KEY_NONE) {
+                    // Qualquer tecla (ou se preferir, limite a BOARD_KEY_BACK / BOARD_KEY_ENTER) sai da tela
+                    break; 
+                }
+
                 delay(50);
             }
             duk_pop(ctx);
@@ -133,9 +142,17 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
         
         uint16_t tx, ty;
         while(true) {
+            // 1. Checa por Touch no botão 'X'
             if (getTouch(&tx, &ty)) {
                 if (tx >= 200 && ty <= 40) break;
             }
+
+            // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
+            BoardKey key = getKeyInput();
+            if (key != BOARD_KEY_NONE) {
+                break;
+            }
+
             delay(50);
         }
     }
@@ -233,9 +250,17 @@ void HarixKernel::runFile(const char* filePath) {
         
         uint16_t tx, ty;
         while(true) {
+            // 1. Checa por Touch no botão 'X'
             if (getTouch(&tx, &ty)) {
                 if (tx >= 200 && ty <= 40) break;
             }
+
+            // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
+            BoardKey key = getKeyInput();
+            if (key == BOARD_KEY_ESC) {
+                break;
+            }
+
             delay(50);
         }
         return; // Soft exit back to OS

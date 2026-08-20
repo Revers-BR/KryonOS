@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "../../Runtime/duktape.h"
-#include "Board.h"
+#include "boards/Board.h"
 
 class HarixKernel {
 public:

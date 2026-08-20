@@ -2,7 +2,7 @@
 #define APP_STORE_UI_H
 
 #include <Arduino.h>
-#include "Board.h"
+#include "boards/Board.h"
 
 struct AppStoreItem {
     String id;

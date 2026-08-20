@@ -1,4 +1,4 @@
-#include "Board.h"
+#include "boards/Board.h"
 #include <SPI.h>
 #include <XPT2046_Touchscreen.h>
 

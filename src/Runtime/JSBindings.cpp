@@ -546,6 +546,129 @@ duk_ret_t JSBindings::js_screenHeight(duk_context *ctx) {
 }
 
 // =====================================================
+// Keyboard Input
+// =====================================================
+#include "boards/Board.h" // Garanta que os enums do teclado estão acessíveis
+
+// Converte o Enum da Tecla para String amigável em JavaScript
+static const char* getKeyNameString(BoardKey key) {
+    switch (key) {
+        case BOARD_KEY_UP:    return "UP";
+        case BOARD_KEY_DOWN:  return "DOWN";
+        case BOARD_KEY_LEFT:  return "LEFT";
+        case BOARD_KEY_RIGHT: return "RIGHT";
+        case BOARD_KEY_ENTER: return "ENTER";
+        case BOARD_KEY_ESC:   return "ESC";
+        case BOARD_KEY_BACK:  return "BACK";
+        case BOARD_KEY_DEL:   return "DEL";
+        default:              return "NONE";
+    }
+}
+
+// 1. JS: getKey() -> Retorna String ("UP", "DOWN", "ENTER", "ESC", "NONE")
+duk_ret_t JSBindings::js_getKey(duk_context *ctx) {
+    BoardKey key = getKeyInput();
+
+    // Interceptador de saída do sistema
+    if (key == BOARD_KEY_ESC) {
+        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
+        return 0; 
+    }
+
+    duk_push_string(ctx, getKeyNameString(key));
+    return 1;
+}
+
+// 3. JS: isKeyPressed("UP") -> Retorna boolean true/false
+duk_ret_t JSBindings::js_isKeyPressed(duk_context *ctx) {
+    if (!duk_is_string(ctx, 0)) {
+        duk_push_boolean(ctx, 0);
+        return 1;
+    }
+
+    const char* targetKey = duk_get_string(ctx, 0);
+    BoardKey currentKey = getKeyInput();
+
+    if (currentKey == BOARD_KEY_ESC) {
+        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
+        return 0;
+    }
+
+    bool matches = (strcmp(targetKey, getKeyNameString(currentKey)) == 0);
+    duk_push_boolean(ctx, matches ? 1 : 0);
+    return 1;
+}
+
+duk_ret_t JSBindings::js_getKeyInput(duk_context *ctx) {
+    BoardKey key = getKeyInput();
+
+    // Interceptador de saída do sistema (Fn + ` mapeia para BOARD_KEY_ESC)
+    if (key == BOARD_KEY_ESC) {
+        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
+        return 0;
+    }
+
+    duk_push_object(ctx);
+    
+    duk_push_string(ctx, getKeyNameString(key));
+    duk_put_prop_string(ctx, -2, "key");
+
+    duk_push_int(ctx, (int)key);
+    duk_put_prop_string(ctx, -2, "code");
+
+    duk_push_boolean(ctx, (key != BOARD_KEY_NONE) ? 1 : 0);
+    duk_put_prop_string(ctx, -2, "pressed");
+
+    return 1;
+}
+
+// 2. JS: getChar() -> Converte a tecla lida para String
+duk_ret_t JSBindings::js_getChar(duk_context *ctx) {
+    BoardKey key = getKeyInput();
+    
+    // Interceptador de saída de emergência
+    if (key == BOARD_KEY_ESC) {
+        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
+        return 0;
+    }
+
+    if (key == BOARD_KEY_NONE) {
+        duk_push_string(ctx, "");
+        return 1;
+    }
+
+    // Processa a conversão de caractere
+    // NOTA: Como sua getKeyInput() desativa o s_fnActive internamente após ler,
+    // garantimos o tratamento correto dos retornos de controle no JS:
+    if (key == BOARD_KEY_ENTER) {
+        duk_push_string(ctx, "\n");
+        return 1;
+    }
+    
+    if (key == BOARD_KEY_TAB) {
+        duk_push_string(ctx, "\t");
+        return 1;
+    } 
+    
+    if (key == BOARD_KEY_BACK || key == BOARD_KEY_DEL) {
+        duk_push_string(ctx, "\b");
+        return 1;
+    }
+
+    // Para demais caracteres (A-Z, 0-9, símbolos e Fn+Letra)
+    char c = keyToChar(key);
+    
+    if (c != 0) {
+        char str[2] = { c, '\0' };
+        duk_push_string(ctx, str);
+    } else {
+        duk_push_string(ctx, "");
+    }
+
+    return 1;
+}
+
+// =====================================================
 // Touch Input
 // =====================================================
 
@@ -877,6 +1000,7 @@ duk_ret_t JSBindings::js_prompt(duk_context *ctx) {
 // =====================================================
 
 void JSBindings::init(duk_context *ctx) {
+
     // --- System Object ---
     duk_push_global_object(ctx);
     duk_push_object(ctx); // System
@@ -961,6 +1085,23 @@ void JSBindings::init(duk_context *ctx) {
     duk_put_prop_string(ctx, -2, "screenWidth");
     duk_push_c_function(ctx, js_screenHeight, 0);
     duk_put_prop_string(ctx, -2, "screenHeight");
+
+    // --- Keyboard Input ---
+    // 1. Registra getKey()
+    duk_push_c_function(ctx, JSBindings::js_getKey, 0);
+    duk_put_prop_string(ctx, -2, "getKey");
+
+    // 2. Registra getKeyInput()
+    duk_push_c_function(ctx, JSBindings::js_getKeyInput, 0);
+    duk_put_prop_string(ctx, -2, "getKeyInput");
+
+    // 3. Registra isKeyPressed(keyName) -> 1 argumento
+    duk_push_c_function(ctx, JSBindings::js_isKeyPressed, 1);
+    duk_put_prop_string(ctx, -2, "isKeyPressed");
+
+    // Registra getChar()
+    duk_push_c_function(ctx, JSBindings::js_getChar, 0);
+    duk_put_prop_string(ctx, -2, "getChar");
 
     // --- Touch Input ---
     duk_push_c_function(ctx, js_getTouch, 0);
@@ -1072,6 +1213,13 @@ void JSBindings::init(duk_context *ctx) {
     duk_push_uint(ctx, TFT_MAGENTA); duk_put_prop_string(ctx, -2, "MAGENTA");
     duk_push_uint(ctx, TFT_ORANGE);  duk_put_prop_string(ctx, -2, "ORANGE");
     duk_push_uint(ctx, TFT_DARKGREY);duk_put_prop_string(ctx, -2, "DARKGREY");
+
+    duk_push_int(ctx, BOARD_KEY_UP);    duk_put_prop_string(ctx, -2, "BOARD_KEY_UP");    // 1
+    duk_push_int(ctx, BOARD_KEY_DOWN);  duk_put_prop_string(ctx, -2, "BOARD_KEY_DOWN");  // 2
+    duk_push_int(ctx, BOARD_KEY_LEFT);  duk_put_prop_string(ctx, -2, "BOARD_KEY_LEFT");  // 3
+    duk_push_int(ctx, BOARD_KEY_RIGHT); duk_put_prop_string(ctx, -2, "BOARD_KEY_RIGHT"); // 4
+    duk_push_int(ctx, BOARD_KEY_ENTER); duk_put_prop_string(ctx, -2, "BOARD_KEY_ENTER"); // 5
+    duk_push_int(ctx, BOARD_KEY_SPACE); duk_put_prop_string(ctx, -2, "BOARD_KEY_SPACE"); // 8
 
     duk_pop(ctx); // pop global object
 }

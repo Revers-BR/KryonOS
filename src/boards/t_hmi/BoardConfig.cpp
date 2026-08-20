@@ -1,4 +1,4 @@
-#include "Board.h"
+#include "boards/Board.h"
 #include "BoardConfig.h" // Importa as constantes locais
 #include <SPI.h>
 #include <SD_MMC.h>
@@ -14,6 +14,10 @@ static SPIClass touchSPI(FSPI);
 static XPT2046_Touchscreen ts(TOUCHSCREEN_CS_PIN, TOUCHSCREEN_IRQ_PIN);
 
 // --- Métodos Globais de Leitura Direta do Touch ---
+
+
+bool hasTouch(void) { return true; }
+bool hasKeyboard(void) { return false; }
 
 bool isTouched(void) {
     return ts.touched();
@@ -123,5 +127,13 @@ uint64_t getSDUsedBytes(void) {
     if (SD_MMC.cardType() == CARD_NONE) return 0;
     return SD_MMC.usedBytes();
 }
+
+BoardKey getKeyInput(void){ return BOARD_KEY_NONE; }
+
+void updateModifiers(BoardKey){}
+void clearModifiers(){}
+char keyToChar(BoardKey){return '\0';};
+bool isShiftActive(){ return false; }
+bool isFnActive(){ return false; }
 
 #endif

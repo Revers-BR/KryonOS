@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
-#include "Board.h"
+#include "boards/Board.h"
 
 class MyKeyboard {
 public:

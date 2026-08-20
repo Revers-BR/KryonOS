@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include "duktape.h"
-#include "Board.h"
+#include "boards/Board.h"
 
 class JSBindings {
 public:
@@ -55,6 +55,12 @@ private:
 
     // Touch Input
     static duk_ret_t js_getTouch(duk_context *ctx);
+
+    // Keyboard Input
+    static duk_ret_t js_getKey(duk_context *ctx);
+    static duk_ret_t js_getKeyInput(duk_context *ctx);
+    static duk_ret_t js_isKeyPressed(duk_context *ctx);
+    static duk_ret_t js_getChar(duk_context *ctx);
 
     // System Utilities
     static duk_ret_t js_millis(duk_context *ctx);

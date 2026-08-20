@@ -1,5 +1,3 @@
-#include <Arduino.h>
-#include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <Preferences.h>
 #include <esp_heap_caps.h>
@@ -110,7 +108,9 @@ void setup() {
 int lastState = -1; // To trigger draws on state change
 
 void loop() {
-    // Redesenho de Interface em Troca de Estados
+    // =========================================================================
+    // 1. REDESENHO DE INTERFACE EM TROCA DE ESTADOS
+    // =========================================================================
     if (currentState != lastState) {
         if (currentState != STATE_RUN_APP) {
             tft.fillScreen(TFT_BLACK);
@@ -131,73 +131,139 @@ void loop() {
         else if (currentState == STATE_APP_STORE) AppStoreUI::draw();
         else if (currentState == STATE_HELP_CENTER) HelpCenterUI::draw();
         
-        // If state changed during drawing, don't set lastState to oldState
+        // Mantém o estado atualizado para evitar re-desenhos em todo ciclo
         if (currentState == oldState) {
             lastState = currentState;
         } else {
-            lastState = -1;
+            lastState = -1; // Força redesenho se o draw() alterou o estado
         }
     }
 
+    // Atualização contínua de animações/interfaces específicas
     if (currentState == STATE_HELP_CENTER) {
         HelpCenterUI::update();
     }
 
-    // --- Tratamento Global do Touch (Usa as funções do Board.cpp diretamente) ---
-    uint16_t x, y;
-    bool touched = getTouch(&x, &y);
-    
-    static unsigned long lastTouchTime = 0;
-    static bool wasTouched = false;
+    // =========================================================================
+    // 2. TRATAMENTO GLOBAL DE ENTRADA VIA TOUCH
+    // =========================================================================
+    if (hasTouch()) {
+        uint16_t x = 0, y = 0;
+        bool touched = getTouch(&x, &y);
+        
+        static unsigned long lastTouchTime = 0;
+        static bool wasTouched = false;
 
-    if (touched) {
-        bool processNow = false;
+        if (touched) {
+            bool processNow = false;
 
-        if (!wasTouched) {
-            processNow = true;
-            lastTouchTime = millis();
-        } else if (millis() - lastTouchTime > 300) {
-            if (y >= 280) { // Repetição rápida no rodapé
+            if (!wasTouched) {
                 processNow = true;
-                lastTouchTime = millis() - 250;
-            }
-        }
-
-        if (processNow) {
-            if (currentState == STATE_LAUNCHER) {
-                LauncherUI::handleTouch(x, y);
-            } else if (currentState == STATE_SETTINGS) {
-                SettingsUI::handleTouch(x, y);
-            } else if (currentState == STATE_INSTALLER) {
-                InstallerUI::handleTouch(x, y);
-            } else if (currentState == STATE_WEB_APP) {
-                WebServerAppUI::handleTouch(x, y);
-            } else if (currentState == STATE_SETTINGS_ABOUT) {
-                SettingsUI::handleAboutTouch(x, y);
-            } else if (currentState == STATE_SETTINGS_WIFI) {
-                SettingsUI::handleWiFiTouch(x, y);
-            } else if (currentState == STATE_SETTINGS_APPS) {
-                SettingsUI::handleAppsTouch(x, y);
-            } else if (currentState == STATE_SETTINGS_TIME) {
-                SettingsUI::handleTimeTouch(x, y);
-            } else if (currentState == STATE_SETTINGS_TIME_MANUAL) {
-                SettingsUI::handleTimeManualTouch(x, y);
-            } else if (currentState == STATE_UPDATER_BOOT || currentState == STATE_UPDATER_MANUAL) {
-                SettingsUI::handleUpdaterTouch(x, y);
-            } else if (currentState == STATE_APP_STORE) {
-                AppStoreUI::handleTouch(x, y);
-            } else if (currentState == STATE_HELP_CENTER) {
-                HelpCenterUI::handleTouch(x, y);
-            } else if (currentState == STATE_RUN_APP) {
-                if (x >= 200 && y <= 40) { // Botão Fechar App
-                    currentState = STATE_LAUNCHER;
+                lastTouchTime = millis();
+            } else if (millis() - lastTouchTime > 300) {
+                if (y >= 280) { // Repetição rápida para botões de rodapé
+                    processNow = true;
+                    lastTouchTime = millis() - 250;
                 }
             }
+
+            if (processNow) {
+                if (currentState == STATE_LAUNCHER) {
+                    LauncherUI::handleTouch(x, y);
+                } else if (currentState == STATE_SETTINGS) {
+                    SettingsUI::handleTouch(x, y);
+                } else if (currentState == STATE_INSTALLER) {
+                    InstallerUI::handleTouch(x, y);
+                } else if (currentState == STATE_WEB_APP) {
+                    WebServerAppUI::handleTouch(x, y);
+                } else if (currentState == STATE_SETTINGS_ABOUT) {
+                    SettingsUI::handleAboutTouch(x, y);
+                } else if (currentState == STATE_SETTINGS_WIFI) {
+                    SettingsUI::handleWiFiTouch(x, y);
+                } else if (currentState == STATE_SETTINGS_APPS) {
+                    SettingsUI::handleAppsTouch(x, y);
+                } else if (currentState == STATE_SETTINGS_TIME) {
+                    SettingsUI::handleTimeTouch(x, y);
+                } else if (currentState == STATE_SETTINGS_TIME_MANUAL) {
+                    SettingsUI::handleTimeManualTouch(x, y);
+                } else if (currentState == STATE_UPDATER_BOOT || currentState == STATE_UPDATER_MANUAL) {
+                    SettingsUI::handleUpdaterTouch(x, y);
+                } else if (currentState == STATE_APP_STORE) {
+                    AppStoreUI::handleTouch(x, y);
+                } else if (currentState == STATE_HELP_CENTER) {
+                    HelpCenterUI::handleTouch(x, y);
+                } else if (currentState == STATE_RUN_APP) {
+                    if (x >= 200 && y <= 40) { // Fechar App
+                        currentState = STATE_LAUNCHER;
+                    }
+                }
+            }
+            wasTouched = true;
+        } else {
+            wasTouched = false;
         }
-        wasTouched = true;
-    } else {
-        wasTouched = false;
     }
 
-    delay(10);
+    // =========================================================================
+    // 3. TRATAMENTO GLOBAL DE ENTRADA VIA TECLADO
+    // =========================================================================
+    if (hasKeyboard()) {
+        // Lemos a tecla UMA ÚNICA VEZ por ciclo do loop
+        BoardKey key = getKeyInput();
+
+        if (key != BOARD_KEY_NONE) {
+            Serial.printf("[Loop] Tecla detectada: Enum %d no Estado: %d\n", key, currentState);
+
+            switch (currentState)
+            {
+                case STATE_LAUNCHER:
+                    LauncherUI::handleKeyInput(key);
+                    break;
+            
+                case STATE_RUN_APP:
+                    if (key == BOARD_KEY_ESC) {
+                            currentState = STATE_LAUNCHER;
+                    }
+                    break;
+                
+                case STATE_SETTINGS:
+                    SettingsUI::handleKeyInput(key);
+                    break;
+
+                case STATE_SETTINGS_WIFI:
+                    SettingsUI::handleWiFiKeyInput(key);
+                    break;
+
+                case STATE_SETTINGS_ABOUT:
+                    SettingsUI::handleAboutKeyInput(key);
+                    break;
+
+                case STATE_SETTINGS_APPS:
+                    SettingsUI::handleAppsKeyInput(key);
+                    break;
+
+                case STATE_SETTINGS_TIME:
+                    SettingsUI::handleTimeKeyInput(key);
+                    break;
+
+                case STATE_SETTINGS_TIME_MANUAL:
+                    SettingsUI::handleTimeManualKeyInput(key);
+                    break;
+
+                case STATE_WEB_APP:
+                    WebServerAppUI::handleKeyInput(key);
+                    break;
+
+                case STATE_UPDATER_BOOT:
+                case STATE_UPDATER_MANUAL:
+                    SettingsUI::handleUpdaterKeyInput(key);
+                    break;
+                    
+                default:
+                    break;
+            }
+        }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10)); // Substituído delay() por vTaskDelay para melhor eficiência no FreeRTOS/ESP32
 }
