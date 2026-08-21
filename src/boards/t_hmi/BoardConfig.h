@@ -16,6 +16,7 @@
 #define PWR_EN_PIN  10
 #define PWR_ON_PIN  14
 #define TFT_BL      38 // Altere caso o backlight use outro pino no T-HMI
+#define BAT_ADC_PIN 5
 
 // --- Pinos do Touch Screen (XPT2046) ---
 #define TOUCHSCREEN_SCLK_PIN 1

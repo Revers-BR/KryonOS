@@ -35,6 +35,9 @@
 #define STATE_HELP_CENTER       14
 
 int currentState = STATE_LAUNCHER;
+// Definição do centro horizontal e vertical dinâmicos
+const int16_t cx = DISP_HOR_RES / 2;
+const int16_t cy = DISP_VER_RES / 2;
 
 // Declaração da referência externa do TFT criada no Board.cpp
 extern TFT_eSPI tft;
@@ -53,12 +56,12 @@ void setup() {
     // Tela de Boot Inicial
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("Booting KryonOS...", 120, 160, 2);
+    tft.drawString("Booting KryonOS...", cx, cy, 2);
 
     // 3. Sistemas de Arquivos e Horário
     if (!FileSystem::init()) {
         Serial.println("File System Warning: Failed to mount.");
-        tft.drawString("FS Mount Warning!", 120, 180, 2);
+        tft.drawString("FS Mount Warning!", cx, cy + 20, 2);
         delay(1000);
     }
     TimeManager::init();
@@ -66,11 +69,13 @@ void setup() {
     // Initialize Web Manager (Only if not disabled)
     if (!FileSystem::exists("/local/nowifi.txt")) {
         tft.fillScreen(TFT_BLACK);
-        tft.drawString("Connecting WiFi...", 120, 160, 2);
+        tft.drawString("Connecting WiFi...", cx, cy, 2);
         Serial.println("DEBUG: Starting WebManager...");
+        
         if (WebManager::init()) {
-            tft.drawString("WiFi Connected!", 120, 140, 2);
-            tft.drawString(WebManager::getIPAddress(), 120, 180, 2);
+            tft.fillScreen(TFT_BLACK);
+            tft.drawString("WiFi Connected!", cx, cy - 15, 2);
+            tft.drawString(WebManager::getIPAddress(), cx, cy + 15, 2);
             delay(2000);
         }
         Serial.println("DEBUG: WebManager initialized.");
@@ -80,14 +85,25 @@ void setup() {
     Serial.printf("DEBUG: Free heap before Kernel: %u\n", ESP.getFreeHeap());
 
     // 6. Scan de Aplicações
-    // Initial App Scan (with loading bar)
     Serial.println("DEBUG: Scanning Local Apps...");
     tft.fillScreen(TFT_BLACK);
-    tft.drawString("Loading Apps...", 120, 160, 2);
-    tft.drawRect(18, 198, 204, 14, TFT_WHITE); // Loading bar outline
+    tft.drawString("Loading Apps...", cx, cy - 15, 2);
+
+    // Barra de Carregamento Adaptável à Resolução
+    const int16_t barWidth = (DISP_HOR_RES * 80) / 100; // 80% da largura da tela
+    const int16_t barHeight = 12;                       // Altura ajustada
+    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;  // Centralizado
+    const int16_t barY = cy + 15;                        // Posição abaixo do texto
+
+    tft.drawRect(barX, barY, barWidth, barHeight, TFT_WHITE); // Contorno da barra de progresso
+
     LauncherUI::scanLocalApps();
     LauncherUI::needsRescan = false;
     Serial.println("DEBUG: Local Apps Scanned.");
+
+// Disabled
+
+if(false){
 
     // Attempt to read touch calibration
     Serial.println("DEBUG: Reading CalData...");
@@ -100,6 +116,7 @@ void setup() {
         Serial.println("No calibration data. Entering calibrator.");
         currentState = STATE_CALIBRATOR;
     }
+}
 
         // Check for updates on boot
     if (currentState == STATE_LAUNCHER && WiFi.status() == WL_CONNECTED) {
@@ -131,7 +148,7 @@ void loop() {
         if (currentState == STATE_LAUNCHER) LauncherUI::draw();
         else if (currentState == STATE_SETTINGS) SettingsUI::draw();
         else if (currentState == STATE_INSTALLER) InstallerUI::draw();
-        else if (currentState == STATE_CALIBRATOR) TouchCalibrator::runCalibration();
+        // else if (currentState == STATE_CALIBRATOR) TouchCalibrator::runCalibration();
         else if (currentState == STATE_WEB_APP) WebServerAppUI::draw();
         else if (currentState == STATE_SETTINGS_ABOUT) SettingsUI::drawAbout();
         else if (currentState == STATE_SETTINGS_WIFI) SettingsUI::drawWiFi();

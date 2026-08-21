@@ -440,4 +440,8 @@ uint64_t getSDUsedBytes(void) {
     return SD.usedBytes();
 }
 
+bool isSDMounted() {
+    return SD.cardType() != CARD_NONE;
+}
+
 #endif // TARGET_CARDPUTER

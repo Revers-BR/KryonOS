@@ -1,3 +1,4 @@
+#include <WiFi.h>
 #include "LauncherUI.h"
 #include "../Kernel/Core/HarixKernel.h"
 #include "../File System/FileSystem.h"
@@ -21,7 +22,14 @@ void LauncherUI::requestRescan() {
 void LauncherUI::scanLocalApps() {
     appCount = 0;
     
-    // Scan both /local/apps/ and /sd/apps/ for folder-based apps and legacy .js files
+    // Configurações dinâmicas para a barra de carregamento
+    const int16_t cy = DISP_VER_RES / 2;
+    const int16_t barWidth = (DISP_HOR_RES * 80) / 100; // 80% da largura da tela
+    const int16_t barHeight = 12;
+    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;  // Centralizado
+    const int16_t barY = cy + 15;                        // Posição vertical proporcional
+
+    // Scan tanto /local/apps/ quanto /sd/apps/
     const char* appDirs[] = { "/local/apps/", "/sd/apps/" };
     
     for (int d = 0; d < 2; d++) {
@@ -31,9 +39,12 @@ void LauncherUI::scanLocalApps() {
         int count = FileSystem::listDirectory(appDirs[d], entries, 50);
         
         for (int i = 0; i < count && appCount < 50; i++) {
-            // Draw loading bar
-            tft.fillRect(20, 200, (i * 200) / count, 10, TFT_GREEN);
-            
+            // Atualiza o preenchimento verde DENTRO do contorno desenhado na Boot
+            if (count > 0) {
+                int fillWidth = map(i + 1, 0, count, 0, barWidth - 4);
+                tft.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4, TFT_GREEN);
+            }
+
             if (entries[i].isDir) {
                 // Check if it's an app package (has app.json)
                 String appJsonPath = entries[i].path;
@@ -118,6 +129,126 @@ void LauncherUI::draw() {
     }
 }
 
+// Desenha o Ícone do Wi-Fi dinamizando a cor e os níveis de sinal conforme o RSSI
+void drawIconWiFi(int16_t x, int16_t y) {
+    if (WiFi.status() == WL_CONNECTED) {
+        int32_t rssi = WiFi.RSSI(); // Sinal em dBm
+        
+        // 1. Determina a cor ativa com base na força do sinal
+        uint16_t activeColor = TFT_GREEN;
+        if (rssi <= -75) {
+            activeColor = TFT_RED;    // Sinal Fraco / Instável
+        } else if (rssi <= -60) {
+            activeColor = TFT_YELLOW; // Sinal Médio
+        } else {
+            activeColor = TFT_GREEN;  // Sinal Forte / Excelente
+        }
+
+        uint16_t inactiveColor = TFT_DARKGREY; // Cor das barras desligadas
+
+        // 2. Determina a ativação dos arcos
+        uint16_t colorDot  = activeColor; 
+        uint16_t colorArc1 = (rssi > -85) ? activeColor : inactiveColor; // Nível 1
+        uint16_t colorArc2 = (rssi > -70) ? activeColor : inactiveColor; // Nível 2
+        uint16_t colorArc3 = (rssi > -55) ? activeColor : inactiveColor; // Nível 3
+
+        // 3. Renderiza os arcos e o ponto central
+        tft.drawCircleHelper(x + 6, y + 10, 6, 1, colorArc3); // Arco Externo
+        tft.drawCircleHelper(x + 6, y + 10, 4, 1, colorArc2); // Arco Médio
+        tft.drawCircleHelper(x + 6, y + 10, 2, 1, colorArc1); // Arco Interno
+        tft.fillCircle(x + 6, y + 10, 1, colorDot);           // Ponto Central
+    } else {
+        // Desconectado: Exibe apenas um 'X' ou ponto vermelho
+        tft.fillCircle(x + 6, y + 10, 1, TFT_RED);
+    }
+}
+
+// Desenha o Ícone do SD Card com variação de cor por uso:
+// Vazio (< 10%): Branco
+// Normal (10% a 85%): Verde
+// Cheio (> 85%): Vermelho
+void drawIconSD(int16_t x, int16_t y) {
+    if (isSDMounted()) { 
+        uint64_t total = getSDTotalBytes();
+        uint64_t used = getSDUsedBytes();
+        
+        // Define a cor padrão como Branco (Vazio / Sem dados suficientes)
+        uint16_t color = TFT_WHITE; 
+
+        if (total > 0) {
+            // Calcula a porcentagem de ocupação (0 a 100%)
+            int usagePercent = (int)((used * 100) / total);
+
+            if (usagePercent > 85) {
+                color = TFT_RED;    // Cheio (> 85%)
+            } else if (usagePercent >= 10) {
+                color = TFT_GREEN;  // Normal (10% - 85%)
+            } else {
+                color = TFT_WHITE;  // Vazio (< 10%)
+            }
+        }
+
+        // Desenha a estrutura do cartão SD com a cor dinâmica calculada
+        tft.drawRect(x, y, 9, 11, color);
+        tft.drawLine(x + 2, y, x, y + 2, color); // Canto chanfrado do SD
+        
+        // Linhas dos pinos do SD
+        tft.drawLine(x + 2, y + 2, x + 2, y + 4, color);
+        tft.drawLine(x + 4, y + 2, x + 4, y + 4, color);
+        tft.drawLine(x + 6, y + 2, x + 6, y + 4, color);
+    }
+}
+
+// Desenha o Ícone da Bateria dinâmico de acordo com a porcentagem
+void drawIconBattery(int16_t x, int16_t y, uint16_t color) {
+    // Corpo da bateria (14x8 pixels)
+    tft.drawRect(x, y + 1, 14, 8, color);
+    // Polo positivo
+    tft.fillRect(x + 14, y + 3, 2, 4, color);
+
+    // Obtém o percentual real da placa
+    int percent = getBatteryPercent();
+
+    // Mapeia 0 a 100% para uma largura de preenchimento de 0 a 10 pixels
+    int fillWidth = map(percent, 0, 100, 0, 10);
+
+    // Define a cor baseada no nível da bateria
+    uint16_t fillColor = TFT_GREEN;
+    if (percent <= 20) {
+        fillColor = TFT_RED;    // Crítico
+    } else if (percent <= 50) {
+        fillColor = TFT_YELLOW; // Médio
+    }
+
+    // Limpa a área interna antes de desenhar o nível
+    tft.fillRect(x + 2, y + 3, 10, 4, TFT_BLACK);
+
+    // Desenha o preenchimento proporcional
+    if (fillWidth > 0) {
+        tft.fillRect(x + 2, y + 3, fillWidth, 4, fillColor);
+    }
+}
+
+// Função para desenhar toda a barra de ícones no cabeçalho
+void drawHeaderIcons(int16_t startX, int16_t y) {
+    int currentX = startX;
+
+    // 1. SD Card (lado esquerdo do bloco de ícones)
+    if(isSDMounted()){
+        drawIconSD(currentX, y);
+        currentX += 14;
+    }
+
+    // 2. Wi-Fi
+    if (WiFi.status() == WL_CONNECTED) {
+        drawIconWiFi(currentX, y);
+        currentX += 16;
+    }
+
+    // 3. Bateria
+    if(hasBattery())drawIconBattery(currentX, y, TFT_WHITE);
+}
+
 // Renderização para telas 240x320 (Layout em Grade Vertical)
 void LauncherUI::drawTall() {
     // Moldura principal
@@ -126,9 +257,14 @@ void LauncherUI::drawTall() {
     // Cabeçalho
     tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
     tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
+    
+    // Texto do Título alinhado à esquerda para dar espaço aos ícones
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("KryonOS Home", 120, 21, 2);
+    tft.setTextDatum(TL_DATUM); // Top Left
+    tft.drawString("KryonOS", 14, 14, 2);
+
+    // Renderiza Ícones de Status no canto superior direito do cabeçalho
+    drawHeaderIcons(170, 15);
 
     LauncherItem items[100];
     int totalItems = getLauncherItems(items, 100);
@@ -172,13 +308,17 @@ void LauncherUI::drawTall() {
     tft.drawString("UP   |   SEL   |   DN", 120, 298, 2);
 }
 
-// Renderização para telas 240x135 (Compact / Cardputer - Grade 2x2)
 void LauncherUI::drawCompact() {
     // Header Minimalista
     tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    
+    // Título ajustado à esquerda para caber os ícones
     tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("KryonOS Home", 120, 10, 2);
+    tft.setTextDatum(TL_DATUM); // Top Left
+    tft.drawString("KryonOS", 6, 4, 2);
+
+    // Desenha ícones no lado direito do cabeçalho
+    drawHeaderIcons(175, 5);
 
     LauncherItem items[100];
     int totalItems = getLauncherItems(items, 100);

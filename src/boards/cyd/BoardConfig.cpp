@@ -31,6 +31,18 @@ bool isTouched(void) {
     return touchscreen.getTouch().zRaw > 150;
 }
 
+bool getTouchRaw(uint16_t *x, uint16_t *y) {
+    if (isTouched()) {
+        TouchPoint touch = touchscreen.getTouch();
+
+        *x = (uint16_t)touch.xRaw;
+        *y = (uint16_t)touch.yRaw;
+
+        return true;
+    }
+    return false;
+}
+
 bool getTouch(uint16_t *x, uint16_t *y) {
     if (isTouched()) {
         TouchPoint touch = touchscreen.getTouch();
@@ -98,6 +110,10 @@ void initTouch(void) {
 }
 
 // --- Gerenciamento do Cartão SD (SPI) ---
+
+bool sdMounted() {
+    
+}
 
 fs::FS* initSD(void) {
     if (SD.cardType() != CARD_NONE) {

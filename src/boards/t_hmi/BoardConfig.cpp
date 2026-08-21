@@ -18,6 +18,7 @@ static XPT2046_Touchscreen ts(TOUCHSCREEN_CS_PIN, TOUCHSCREEN_IRQ_PIN);
 
 bool hasTouch(void) { return true; }
 bool hasKeyboard(void) { return false; }
+bool hasBattery(void) {return true; }
 
 bool isTouched(void) {
     return ts.touched();
@@ -52,6 +53,11 @@ void initHardware(void) {
     pinMode(PWR_EN_PIN, OUTPUT);
     digitalWrite(PWR_EN_PIN, HIGH);
 #endif
+
+    // Configura o pino ADC da bateria
+    analogReadResolution(12); // Resolução de 12-bit (0-4095)
+    pinMode(BAT_ADC_PIN, INPUT);
+
     delay(100);
 
     // Garante CS do Touch em nível alto
@@ -65,6 +71,29 @@ void initHardware(void) {
 #endif
 
     Serial.println("[Board] Hardware T-HMI Inicializado.");
+}
+
+// Retorna a voltagem real em Volts (ex: 3.7V, 4.2V)
+float getBatteryVoltage(void) {
+    // Leitura analógica em milivolts usando a calibração interna do ESP32
+    uint32_t raw_mv = analogReadMilliVolts(BAT_ADC_PIN);
+    
+    // Como há um divisor de tensão (geralmente 100k / 100k), multiplica-se por 2.
+    // Se a leitura parecer metade da real, ajuste o fator de 2.0.
+    float voltage = (raw_mv * 2.0f) / 1000.0f; 
+    return voltage;
+}
+
+// Retorna a porcentagem de 0% a 100%
+int getBatteryPercent(void) {
+    float v = getBatteryVoltage();
+    
+    // Bateria LiPo/Li-Ion: 3.3V (0%) a 4.2V (100%)
+    if (v >= 4.2f) return 100;
+    if (v <= 3.3f) return 0;
+
+    int percent = (int)((v - 3.3f) / (4.2f - 3.3f) * 100.0f);
+    return constrain(percent, 0, 100);
 }
 
 void initDisplay(void) {
@@ -126,6 +155,10 @@ uint64_t getSDTotalBytes(void) {
 uint64_t getSDUsedBytes(void) {
     if (SD_MMC.cardType() == CARD_NONE) return 0;
     return SD_MMC.usedBytes();
+}
+
+bool isSDMounted() {
+    return SD_MMC.cardType() != CARD_NONE;
 }
 
 BoardKey getKeyInput(void){ return BOARD_KEY_NONE; }

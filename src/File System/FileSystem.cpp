@@ -227,34 +227,77 @@ int FileSystem::listDirectory(const char* dirPath, FileEntry* entries, int maxEn
 }
 
 bool FileSystem::readCalData(uint16_t* calData) {
-    // 1. Proteção contra ponteiro nulo
-    if (calData == nullptr) return false;
+    Serial.println("[FileSystem] Iniciando leitura da calibracao do touch...");
 
-    // 2. Verificação via método unificado da classe
-    if (!exists("/local/touch_cal_p.bin")) return false;
+    // 1. Protecao contra ponteiro nulo
+    if (calData == nullptr) {
+        Serial.println("[FileSystem] ERRO: Ponteiro calData e nulo!");
+        return false;
+    }
+
+    // 2. Verificacao de existencia do arquivo
+    if (!exists("/local/touch_cal_p.bin")) {
+        Serial.println("[FileSystem] ERRO: Arquivo '/touch_cal_p.bin' nao encontrado.");
+        return false;
+    }
 
     File f = LittleFS.open("/touch_cal_p.bin", FILE_READ);
-    if (!f) return false;
+    if (!f) {
+        Serial.println("[FileSystem] ERRO: Falha ao abrir '/touch_cal_p.bin' para leitura.");
+        return false;
+    }
 
-    // 3. Leitura dos 10 bytes (5 valores uint16_t) e fechamento do arquivo
+    // 3. Leitura dos 10 bytes (5 valores uint16_t)
     size_t bytesRead = f.read((uint8_t*)calData, 10);
     f.close();
 
-    return (bytesRead == 10);
+    if (bytesRead == 10) {
+        Serial.println("[FileSystem] Calibracao lida com sucesso:");
+        Serial.print("  -> X_MIN: "); Serial.println(calData[0]);
+        Serial.print("  -> X_MAX: "); Serial.println(calData[1]);
+        Serial.print("  -> Y_MIN: "); Serial.println(calData[2]);
+        Serial.print("  -> Y_MAX: "); Serial.println(calData[3]);
+        Serial.print("  -> Extra/Param: "); Serial.println(calData[4]);
+        return true;
+    } else {
+        Serial.print("[FileSystem] ERRO: Bytes lidos incorretos. Esperado: 10, Lido: ");
+        Serial.println(bytesRead);
+        return false;
+    }
 }
 
 bool FileSystem::writeCalData(uint16_t* calData) {
-    // 1. Proteção contra ponteiro nulo
-    if (calData == nullptr) return false;
+    Serial.println("[FileSystem] Iniciando gravacao da calibracao do touch...");
+
+    // 1. Protecao contra ponteiro nulo
+    if (calData == nullptr) {
+        Serial.println("[FileSystem] ERRO: Ponteiro calData e nulo!");
+        return false;
+    }
 
     File f = LittleFS.open("/touch_cal_p.bin", FILE_WRITE);
-    if (!f) return false;
+    if (!f) {
+        Serial.println("[FileSystem] ERRO: Falha ao criar/abrir '/touch_cal_p.bin' para escrita.");
+        return false;
+    }
 
-    // 2. Validação se todos os 10 bytes foram efetivamente gravados na Flash
+    // 2. Gravacao dos 10 bytes (5 valores uint16_t)
     size_t bytesWritten = f.write((uint8_t*)calData, 10);
     f.close();
 
-    return (bytesWritten == 10);
+    if (bytesWritten == 10) {
+        Serial.println("[FileSystem] Calibracao salva com sucesso na Flash:");
+        Serial.print("  -> X_MIN: "); Serial.println(calData[0]);
+        Serial.print("  -> X_MAX: "); Serial.println(calData[1]);
+        Serial.print("  -> Y_MIN: "); Serial.println(calData[2]);
+        Serial.print("  -> Y_MAX: "); Serial.println(calData[3]);
+        Serial.print("  -> Extra/Param: "); Serial.println(calData[4]);
+        return true;
+    } else {
+        Serial.print("[FileSystem] ERRO: Bytes gravados incorretos. Esperado: 10, Gravado: ");
+        Serial.println(bytesWritten);
+        return false;
+    }
 }
 
 bool FileSystem::copyFile(const char* srcPath, const char* dstPath) {
