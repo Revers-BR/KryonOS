@@ -178,7 +178,7 @@ void SettingsUI::handleKeyInput(BoardKey key) {
 
                 case 1: 
                     Serial.println("[Settings Main] Opening Touch Calibrator...");
-                    currentState = 10; 
+                    currentState = 4; 
                     break; 
 
                 case 2: 

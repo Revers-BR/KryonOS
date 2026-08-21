@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "boards/Board.h"
+#include <WiFi.h>
 
 struct MenuItem {
     const char* label;

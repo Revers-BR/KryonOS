@@ -74,6 +74,7 @@ static bool s_fnActive = false;
 // Mantenha as declarações do touch para compatibilidade com a placa T-HMI/CYD
 bool isTouched(void);
 bool getTouch(uint16_t *x, uint16_t *y);
+void loadTouchCalibration();
 
 // Adicione a declaração da leitura por tecla
 BoardKey getKeyInput(void);

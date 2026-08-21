@@ -4,16 +4,17 @@
 
 #include "boards/Board.h"
 #include "File System/FileSystem.h"
-#include "Launcher/LauncherUI.h"
 #include "Settings/SettingsUI.h"
-#include "Launcher/InstallerUI.h"
+#include "Settings/TouchCalibrator.h"
 #include "Keyboard/MyKeyboard.h"
+#include "WebServerApp/WebServerAppUI.h"
 #include "WebManager/WebManager.h"
 #include "Runtime/JSBindings.h"
-#include "Kernel/Core/HarixKernel.h"
-#include "WebServerApp/WebServerAppUI.h"
 #include "Kernel/TimeManager.h"
+#include "Kernel/Core/HarixKernel.h"
+#include "Launcher/LauncherUI.h"
 #include "Launcher/AppStoreUI.h"
+#include "Launcher/InstallerUI.h"
 #include "Launcher/HelpCenterUI.h"
 
 // Definição dos Estados
@@ -21,6 +22,7 @@
 #define STATE_SETTINGS          1
 #define STATE_RUN_APP           2
 #define STATE_INSTALLER         3
+#define STATE_CALIBRATOR        4
 #define STATE_WEB_APP           5
 #define STATE_SETTINGS_WIFI     6
 #define STATE_SETTINGS_ABOUT    7
@@ -87,8 +89,17 @@ void setup() {
     LauncherUI::needsRescan = false;
     Serial.println("DEBUG: Local Apps Scanned.");
 
-    LauncherUI::scanLocalApps();
-    LauncherUI::needsRescan = false;
+    // Attempt to read touch calibration
+    Serial.println("DEBUG: Reading CalData...");
+    uint16_t calData[5];
+    if (FileSystem::readCalData(calData)) {
+        Serial.println("Calibration data found and loaded.");
+        loadTouchCalibration();
+        currentState = STATE_LAUNCHER;
+    } else {
+        Serial.println("No calibration data. Entering calibrator.");
+        currentState = STATE_CALIBRATOR;
+    }
 
         // Check for updates on boot
     if (currentState == STATE_LAUNCHER && WiFi.status() == WL_CONNECTED) {
@@ -120,6 +131,7 @@ void loop() {
         if (currentState == STATE_LAUNCHER) LauncherUI::draw();
         else if (currentState == STATE_SETTINGS) SettingsUI::draw();
         else if (currentState == STATE_INSTALLER) InstallerUI::draw();
+        else if (currentState == STATE_CALIBRATOR) TouchCalibrator::runCalibration();
         else if (currentState == STATE_WEB_APP) WebServerAppUI::draw();
         else if (currentState == STATE_SETTINGS_ABOUT) SettingsUI::drawAbout();
         else if (currentState == STATE_SETTINGS_WIFI) SettingsUI::drawWiFi();
