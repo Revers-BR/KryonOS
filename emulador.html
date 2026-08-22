@@ -187,7 +187,12 @@
       justify-content: center;
     }
     canvas#tftDisplay {
+      /* Renderização de pixels nítida sem suavização bilinear */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
       image-rendering: pixelated;
+      -ms-interpolation-mode: nearest-neighbor;
+
       background-color: #000;
       display: block;
       cursor: crosshair;
@@ -410,6 +415,8 @@
       "/sd/data_log.txt": "2026-08-08 10:00:00 | Sensor: 24.5C"
     };
 
+    var virtualDirs = ["/", "/local", "/sd"];
+
     var hwState = { pinModes: {}, digitalOutputs: {}, analogOutputs: {}, wifiActive: true };
 
     var COLOR_CONSTANTS = {
@@ -426,226 +433,516 @@
     }
 
     function getCurrentTargetCtx() {
-      if (spriteBinding && activeSprite) return activeSprite.ctx;
-      return ctx;
+      var targetCtx = (spriteBinding && activeSprite) ? activeSprite.ctx : ctx;
+      
+      // Desativa suavização de pixels para evitar texto borrado
+      targetCtx.imageSmoothingEnabled = false;
+      targetCtx.webkitImageSmoothingEnabled = false;
+      targetCtx.mozImageSmoothingEnabled = false;
+      targetCtx.msImageSmoothingEnabled = false;
+      
+      return targetCtx;
     }
 
     // =========================================================================
     // KRYONOS NATIVE BINDINGS (`System` API)
     // =========================================================================
 
-    var System = {
-      screenWidth: function() { return TFT_WIDTH; },
-      screenHeight: function() { return TFT_HEIGHT; },
-      getOSVersion: function() { return "1.0.0"; },
-      getAPILevel: function() { return 1; },
-      millis: function() { return Date.now() - bootTime; },
-      micros: function() { return (Date.now() - bootTime) * 1000; },
-      getTemperature: function() { return parseFloat((38.0 + Math.sin(Date.now() / 3000) * 1.5).toFixed(1)); },
-      hasTemperatureSensor: function() { return true; },
-      
-      delay: function(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); },
-      delayMicroseconds: function(us) { return new Promise(function(resolve) { setTimeout(resolve, us / 1000); }); },
+// Armazenamento em memória para credenciais de Wi-Fi salvas
+  var wifiMemory = {
+    connectedSSID: null,
+    savedNetworks: []
+  };
 
-      print: function(str) {
-        var consoleEl = document.getElementById('consoleOutput');
+  var virtualFS = {
+    "/local/app.js": "// KryonOS App File\nSystem.print('Iniciando app do FS...');",
+    "/local/config.json": '{"theme":"dark","autoStart":true}',
+    "/sd/data_log.txt": "2026-08-08 10:00:00 | Sensor: 24.5C"
+  };
+
+  // Diretórios virtuais do sistema
+  var virtualDirs = ["/", "/local", "/sd"];
+
+  var sdMounted = true;
+
+  var FS = {
+    // Checa se o caminho é um diretório
+    isDirectory: function(path) {
+      if (!path) return false;
+      var cleanPath = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+      if (virtualDirs.indexOf(cleanPath) !== -1) return true;
+
+      var prefix = cleanPath.endsWith('/') ? cleanPath : cleanPath + '/';
+      return Object.keys(virtualFS).some(function(filePath) {
+        return filePath.indexOf(prefix) === 0;
+      });
+    },
+
+    // Checa se o caminho é um arquivo regular
+    isFile: function(path) {
+      return virtualFS.hasOwnProperty(path);
+    },
+
+    // Checa se o arquivo ou diretório existe
+    exists: function(path) {
+      return FS.isFile(path) || FS.isDirectory(path);
+    },
+
+    // Retorna estatísticas/metadados do arquivo/diretório
+    stat: function(path) {
+      if (FS.isFile(path)) {
+        return {
+          size: virtualFS[path].length,
+          isFile: true,
+          isDirectory: false,
+          mtime: Date.now()
+        };
+      } else if (FS.isDirectory(path)) {
+        return {
+          size: 0,
+          isFile: false,
+          isDirectory: true,
+          mtime: Date.now()
+        };
+      }
+      return null;
+    },
+
+    // Cria um diretório virtual
+    mkdir: function(path) {
+      if (virtualDirs.indexOf(path) === -1) {
+        virtualDirs.push(path);
+        if (typeof renderFsTree === 'function') renderFsTree();
+      }
+      return true;
+    },
+
+    // Remove um diretório virtual
+    rmdir: function(path) {
+      var index = virtualDirs.indexOf(path);
+      if (index !== -1) {
+        virtualDirs.splice(index, 1);
+        if (typeof renderFsTree === 'function') renderFsTree();
+        return true;
+      }
+      return false;
+    },
+
+    readTextFile: function(path) { 
+      if (path.indexOf('/sd/') === 0 && !sdMounted) return null;
+      return virtualFS[path] || null; 
+    },
+
+    writeTextFile: function(path, content) { 
+      if (path.indexOf('/sd/') === 0 && !sdMounted) return false;
+      virtualFS[path] = content; 
+      if (typeof renderFsTree === 'function') renderFsTree(); 
+      return true; 
+    },
+
+    appendTextFile: function(path, content) { 
+      if (path.indexOf('/sd/') === 0 && !sdMounted) return false;
+      virtualFS[path] = (virtualFS[path] || "") + content; 
+      if (typeof renderFsTree === 'function') renderFsTree();
+      return true; 
+    },
+
+    deleteFile: function(path) { 
+      if (path.indexOf('/sd/') === 0 && !sdMounted) return false;
+      delete virtualFS[path]; 
+      if (typeof renderFsTree === 'function') renderFsTree(); 
+      return true; 
+    },
+
+    // Renomeia ou move um arquivo
+    renameFile: function(pathFrom, pathTo) {
+      if (!virtualFS.hasOwnProperty(pathFrom)) return false;
+      virtualFS[pathTo] = virtualFS[pathFrom];
+      delete virtualFS[pathFrom];
+      if (typeof renderFsTree === 'function') renderFsTree();
+      return true;
+    },
+
+    listDir: function(dir) { 
+      var prefix = dir.endsWith('/') ? dir : dir + '/';
+      return Object.keys(virtualFS).filter(function(p) { 
+        return p.indexOf(prefix) === 0; 
+      }); 
+    },
+
+    getFileSize: function(path) { 
+      return virtualFS[path] ? virtualFS[path].length : 0; 
+    },
+
+    getFileMD5: function(path) { 
+      return "e10adc3949ba59abbe56e057f20f883e"; 
+    },
+
+    // Métricas de Espaço de Armazenamento
+    getTotalSpace: function(drive) {
+      if (drive === "/local") return 2097152; // 2MB Internal Flash
+      if (drive === "/sd") return 16106127360; // 16GB SD Card
+      return 0;
+    },
+
+    getUsedSpace: function(drive) {
+      var totalUsed = 0;
+      var prefix = drive.endsWith('/') ? drive : drive + '/';
+      Object.keys(virtualFS).forEach(function(k) {
+        if (k.indexOf(prefix) === 0) {
+          totalUsed += virtualFS[k].length;
+        }
+      });
+      return totalUsed;
+    },
+
+    getFreeSpace: function(drive) {
+      return FS.getTotalSpace(drive) - FS.getUsedSpace(drive);
+    },
+
+    // Controle de Montagem do SD Card
+    mountSD: function() {
+      sdMounted = true;
+      System.print("[FS] Cartão SD montado com sucesso.");
+      if (typeof renderFsTree === 'function') renderFsTree();
+      return true;
+    },
+
+    unmountSD: function() {
+      sdMounted = false;
+      System.print("[FS] Cartão SD desmontado.");
+      if (typeof renderFsTree === 'function') renderFsTree();
+      return true;
+    }
+  };
+
+  var System = {
+    screenWidth: function() { return TFT_WIDTH; },
+    screenHeight: function() { return TFT_HEIGHT; },
+    getOSVersion: function() { return "1.0.0"; },
+    getAPILevel: function() { return 1; },
+    millis: function() { return Date.now() - bootTime; },
+    micros: function() { return (Date.now() - bootTime) * 1000; },
+    getTemperature: function() { return parseFloat((38.0 + Math.sin(Date.now() / 3000) * 1.5).toFixed(1)); },
+    hasTemperatureSensor: function() { return true; },
+    
+    delay: function(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); },
+    delayMicroseconds: function(us) { return new Promise(function(resolve) { setTimeout(resolve, us / 1000); }); },
+
+    print: function(str) {
+      var consoleEl = document.getElementById('consoleOutput');
+      if (consoleEl) {
         consoleEl.textContent += str + "\n";
         consoleEl.scrollTop = consoleEl.scrollHeight;
-      },
-
-      getTouch: function() {
-        if (touchState.touched && touchState.x >= 200 && touchState.y <= 40) {
-          System.print("[KERNEL] Gatilho de Saída Acionado! App encerrado.");
-          stopScript("App abortado pelo usuário (Touch no canto sup. dir).");
-        }
-        return { x: touchState.x, y: touchState.y, touched: touchState.touched };
-      },
-
-      getInfo: function() {
-        return {
-          totalRAM: 327680, freeRAM: 92160, minFreeRAM: 45000, maxAllocRAM: 28000,
-          cpuFreqMHz: 240, chipModel: "ESP32-D0WDQ6", chipCores: 2, chipRevision: 1,
-          flashSize: 4194304, uptimeMs: System.millis()
-        };
-      },
-
-      getIPAddress: function() { return hwState.wifiActive ? "192.168.1.100" : "0.0.0.0"; },
-      isWiFiActive: function() { return hwState.wifiActive; },
-      restart: function() { rebootSystem(); },
-
-      getTime: function() {
-        var d = new Date();
-        return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-      },
-      getSeconds: function() { return new Date().getSeconds(); },
-      getDate: function() {
-        var d = new Date();
-        return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
-      },
-      getYear: function() { return new Date().getFullYear(); },
-      getMonth: function() { return new Date().getMonth() + 1; },
-      getDay: function() { return new Date().getDate(); },
-      getTimezone: function() { return "UTC-3"; },
-
-      prompt: function(promptMsg, initialText) {
-        return new Promise(function(resolve) {
-          var res = window.prompt(promptMsg, initialText || "");
-          resolve(res || "");
-        });
-      },
-
-      color: function(r, g, b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); },
-
-      fillScreen: function(color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.fillRect(0, 0, c.canvas.width, c.canvas.height);
-      },
-      drawPixel: function(x, y, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.fillRect(x, y, 1, 1);
-      },
-      drawLine: function(x1, y1, x2, y2, color) {
-        var c = getCurrentTargetCtx();
-        c.strokeStyle = rgb565ToCss(color);
-        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-      },
-      drawFastHLine: function(x, y, w, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.fillRect(x, y, w, 1);
-      },
-      drawFastVLine: function(x, y, h, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.fillRect(x, y, 1, h);
-      },
-      drawRect: function(x, y, w, h, color) {
-        var c = getCurrentTargetCtx();
-        c.strokeStyle = rgb565ToCss(color);
-        c.strokeRect(x, y, w, h);
-      },
-      fillRect: function(x, y, w, h, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.fillRect(x, y, w, h);
-      },
-      drawRoundRect: function(x, y, w, h, radius, color) {
-        var c = getCurrentTargetCtx();
-        c.strokeStyle = rgb565ToCss(color);
-        c.beginPath(); c.roundRect(x, y, w, h, radius); c.stroke();
-      },
-      fillRoundRect: function(x, y, w, h, radius, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.beginPath(); c.roundRect(x, y, w, h, radius); c.fill();
-      },
-      drawCircle: function(x, y, r, color) {
-        var c = getCurrentTargetCtx();
-        c.strokeStyle = rgb565ToCss(color);
-        c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.stroke();
-      },
-      fillCircle: function(x, y, r, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.fill();
-      },
-      drawTriangle: function(x1, y1, x2, y2, x3, y3, color) {
-        var c = getCurrentTargetCtx();
-        c.strokeStyle = rgb565ToCss(color);
-        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.stroke();
-      },
-      fillTriangle: function(x1, y1, x2, y2, x3, y3, color) {
-        var c = getCurrentTargetCtx();
-        c.fillStyle = rgb565ToCss(color);
-        c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.fill();
-      },
-
-      createSprite: function(w, h) {
-        var spriteCanvas = document.createElement('canvas');
-        spriteCanvas.width = w; spriteCanvas.height = h;
-        activeSprite = { canvas: spriteCanvas, ctx: spriteCanvas.getContext('2d'), w: w, h: h };
-        return true;
-      },
-      bindSprite: function(enabled) { spriteBinding = !!enabled; },
-      pushSprite: function(x, y) { if (activeSprite) ctx.drawImage(activeSprite.canvas, x, y); },
-      deleteSprite: function() { activeSprite = null; spriteBinding = false; },
-
-      setTextColor: function(fg, bg) { textFgColor = fg; textBgColor = bg; },
-      setTextSize: function(s) { textSize = Math.max(1, Math.min(5, s)); },
-      drawString: function(str, x, y, font) {
-        var c = getCurrentTargetCtx();
-        var fontSize = (font === 4 ? 18 : font === 2 ? 14 : 10) * textSize;
-        c.font = fontSize + "px monospace";
-        if (textBgColor !== undefined) {
-          var metrics = c.measureText(str);
-          c.fillStyle = rgb565ToCss(textBgColor);
-          c.fillRect(x, y, metrics.width, fontSize);
-        }
-        c.fillStyle = rgb565ToCss(textFgColor);
-        c.fillText(str, x, y + fontSize - 2);
-      },
-
-      gpio: {
-        INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, HIGH: 1, LOW: 0,
-        pinMode: function(pin, mode) { hwState.pinModes[pin] = mode; },
-        digitalWrite: function(pin, val) {
-          hwState.digitalOutputs[pin] = val;
-          if (pin === 2) document.getElementById('ledPin2').className = "led-indicator " + (val ? "active" : "");
-        },
-        digitalRead: function(pin) {
-          if (pin === 5) return document.getElementById('pin5Digital').checked ? 1 : 0;
-          return 0;
-        },
-        analogRead: function(pin) {
-          if (pin === 4) return parseInt(document.getElementById('pin4Analog').value);
-          return 0;
-        },
-        analogWrite: function(pin, pwm) { hwState.analogOutputs[pin] = pwm; }
       }
-    };
+    },
 
-    var FS = {
-      exists: function(path) { return virtualFS.hasOwnProperty(path); },
-      readTextFile: function(path) { return virtualFS[path] || null; },
-      writeTextFile: function(path, content) { virtualFS[path] = content; renderFsTree(); return true; },
-      appendTextFile: function(path, content) { virtualFS[path] = (virtualFS[path] || "") + content; return true; },
-      deleteFile: function(path) { delete virtualFS[path]; renderFsTree(); return true; },
-      listDir: function(dir) { return Object.keys(virtualFS).filter(function(p) { return p.indexOf(dir) === 0; }); },
-      getFileSize: function(path) { return virtualFS[path] ? virtualFS[path].length : 0; },
-      getFileMD5: function(path) { return "e10adc3949ba59abbe56e057f20f883e"; }
-    };
+    // Método para conectar ao Wi-Fi, exibir aviso na tela e armazenar em memória
+    connectWiFi: function(ssid, password) {
+      hwState.wifiActive = true;
+      wifiMemory.connectedSSID = ssid;
+      
+      if (wifiMemory.savedNetworks.indexOf(ssid) === -1) {
+        wifiMemory.savedNetworks.push(ssid);
+      }
 
-    // Banco de Assinaturas de Métodos para o Popover
-    var methodSignatures = {
-      "System.delay": "System.delay(ms) - Pausa execução e roda o Garbage Collector.",
-      "System.print": "System.print(str) - Imprime mensagem no Monitor Serial.",
-      "System.color": "System.color(r, g, b) - Converte RGB para 16-bit RGB565.",
-      "System.fillScreen": "System.fillScreen(color) - Preenche a tela inteira.",
-      "System.fillRect": "System.fillRect(x, y, w, h, color) - Retângulo preenchido.",
-      "System.drawRect": "System.drawRect(x, y, w, h, color) - Borda de retângulo.",
-      "System.fillCircle": "System.fillCircle(x, y, r, color) - Círculo preenchido.",
-      "System.drawString": "System.drawString(text, x, y, font) - Escreve texto.",
-      "System.getTouch": "System.getTouch() - Retorna { x, y, touched }.",
-      "System.getInfo": "System.getInfo() - Retorna dados de RAM, CPU e Uptime.",
-      "System.createSprite": "System.createSprite(w, h) - Aloca um buffer off-screen.",
-      "System.bindSprite": "System.bindSprite(enabled) - Redireciona desenho para o Sprite.",
-      "System.pushSprite": "System.pushSprite(x, y) - Envia buffer para o display.",
-      "System.gpio.pinMode": "System.gpio.pinMode(pin, mode) - Configura INPUT/OUTPUT.",
-      "System.gpio.digitalWrite": "System.gpio.digitalWrite(pin, state) - Define HIGH/LOW.",
-      "System.gpio.analogRead": "System.gpio.analogRead(pin) - Lê conversor ADC.",
-      "FS.readTextFile": "FS.readTextFile(path) - Lê arquivo de texto.",
-      "FS.writeTextFile": "FS.writeTextFile(path, content) - Grava arquivo no disco."
-    };
+      // Grava credenciais persistentes no FS
+      FS.writeTextFile("/local/wifi.json", JSON.stringify(wifiMemory));
 
-    // Base de Conhecimento Duktape 2.x / ES5 Nativos
-    var duktapeKeywords = [
-      "Math.floor(", "Math.ceil(", "Math.round(", "Math.random()", "Math.abs(", "Math.sin(", "Math.cos(", "Math.max(", "Math.min(",
-      "JSON.stringify(", "JSON.parse(", "Object.keys(", "Array.prototype.slice", "parseInt(", "parseFloat(", "isFinite(", "isNaN(",
-      "Uint8Array", "Int8Array", "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Promise", "Proxy", "Reflect"
-    ];
+      // Exibe notificação na tela do projeto
+      var notificationMsg = "Conectado à rede Wi-Fi: " + ssid;
+      System.print("[WIFI] " + notificationMsg);
+      
+      // Renderiza alerta visual no canvas
+      var c = getCurrentTargetCtx();
+      c.fillStyle = "rgba(0, 150, 0, 0.85)";
+      c.fillRect(10, 10, c.canvas.width - 20, 30);
+      c.fillStyle = "#FFFFFF";
+      c.font = "12px monospace";
+      c.fillText(notificationMsg, 15, 30);
 
+      return true;
+    },
+
+    getTouch: function() {
+      if (touchState.touched && touchState.x >= 200 && touchState.y <= 40) {
+        System.print("[KERNEL] Gatilho de Saída Acionado! App encerrado.");
+        stopScript("App abortado pelo usuário (Touch no canto sup. dir).");
+      }
+      return { x: touchState.x, y: touchState.y, touched: touchState.touched };
+    },
+
+    getInfo: function() {
+      return {
+        totalRAM: 327680, freeRAM: 92160, minFreeRAM: 45000, maxAllocRAM: 28000,
+        cpuFreqMHz: 240, chipModel: "ESP32-D0WDQ6", chipCores: 2, chipRevision: 1,
+        flashSize: 4194304, uptimeMs: System.millis()
+      };
+    },
+
+    getIPAddress: function() { return hwState.wifiActive ? "192.168.1.100" : "0.0.0.0"; },
+    isWiFiActive: function() { return hwState.wifiActive; },
+    getConnectedSSID: function() { return wifiMemory.connectedSSID || "Desconectado"; },
+    restart: function() { rebootSystem(); },
+
+    getTime: function() {
+      var d = new Date();
+      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+    },
+    getSeconds: function() { return new Date().getSeconds(); },
+    getDate: function() {
+      var d = new Date();
+      return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+    },
+    getYear: function() { return new Date().getFullYear(); },
+    getMonth: function() { return new Date().getMonth() + 1; },
+    getDay: function() { return new Date().getDate(); },
+    getTimezone: function() { return "UTC-3"; },
+
+    prompt: function(promptMsg, initialText) {
+      return new Promise(function(resolve) {
+        var res = window.prompt(promptMsg, initialText || "");
+        resolve(res || "");
+      });
+    },
+
+    color: function(r, g, b) { return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3); },
+
+    fillScreen: function(color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.fillRect(0, 0, c.canvas.width, c.canvas.height);
+    },
+    drawPixel: function(x, y, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.fillRect(x, y, 1, 1);
+    },
+    drawLine: function(x1, y1, x2, y2, color) {
+      var c = getCurrentTargetCtx();
+      c.strokeStyle = rgb565ToCss(color);
+      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+    },
+    drawFastHLine: function(x, y, w, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.fillRect(x, y, w, 1);
+    },
+    drawFastVLine: function(x, y, h, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.fillRect(x, y, 1, h);
+    },
+    drawRect: function(x, y, w, h, color) {
+      var c = getCurrentTargetCtx();
+      c.strokeStyle = rgb565ToCss(color);
+      c.strokeRect(x, y, w, h);
+    },
+    fillRect: function(x, y, w, h, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.fillRect(x, y, w, h);
+    },
+    drawRoundRect: function(x, y, w, h, radius, color) {
+      var c = getCurrentTargetCtx();
+      c.strokeStyle = rgb565ToCss(color);
+      c.beginPath(); c.roundRect(x, y, w, h, radius); c.stroke();
+    },
+    fillRoundRect: function(x, y, w, h, radius, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.beginPath(); c.roundRect(x, y, w, h, radius); c.fill();
+    },
+    drawCircle: function(x, y, r, color) {
+      var c = getCurrentTargetCtx();
+      c.strokeStyle = rgb565ToCss(color);
+      c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.stroke();
+    },
+    fillCircle: function(x, y, r, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); c.fill();
+    },
+    drawTriangle: function(x1, y1, x2, y2, x3, y3, color) {
+      var c = getCurrentTargetCtx();
+      c.strokeStyle = rgb565ToCss(color);
+      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.stroke();
+    },
+    fillTriangle: function(x1, y1, x2, y2, x3, y3, color) {
+      var c = getCurrentTargetCtx();
+      c.fillStyle = rgb565ToCss(color);
+      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.closePath(); c.fill();
+    },
+
+    createSprite: function(w, h) {
+      var spriteCanvas = document.createElement('canvas');
+      spriteCanvas.width = w; spriteCanvas.height = h;
+      activeSprite = { canvas: spriteCanvas, ctx: spriteCanvas.getContext('2d'), w: w, h: h };
+      return true;
+    },
+    bindSprite: function(enabled) { spriteBinding = !!enabled; },
+    pushSprite: function(x, y) { if (activeSprite) ctx.drawImage(activeSprite.canvas, x, y); },
+    deleteSprite: function() { activeSprite = null; spriteBinding = false; },
+
+    setTextColor: function(fg, bg) { textFgColor = fg; textBgColor = bg; },
+    setTextSize: function(s) { textSize = Math.max(1, Math.min(5, s)); },
+    drawString: function(str, x, y, font) {
+      var c = getCurrentTargetCtx();
+      
+      // Arredonda coordenadas x e y para eliminar sub-pixels
+      x = Math.floor(x);
+      y = Math.floor(y);
+
+      var fontSize = (font === 4 ? 18 : font === 2 ? 14 : 10) * textSize;
+      
+      // 'Courier New' força renderização bitmap pixelada e nítida
+      c.font = fontSize + "px 'Courier New', monospace";
+
+      if (textBgColor !== undefined) {
+        var metrics = c.measureText(str);
+        c.fillStyle = rgb565ToCss(textBgColor);
+        c.fillRect(x, y, Math.ceil(metrics.width), fontSize);
+      }
+      
+      c.fillStyle = rgb565ToCss(textFgColor);
+      c.fillText(str, x, y + fontSize - 2);
+    },
+    drawBMP: function(path, x, y) {
+      // Valida se o arquivo existe no VFS
+      if (!FS.exists(path) || FS.isDirectory(path)) {
+        System.print("[BMP Error] Arquivo nao encontrado: " + path);
+        return false;
+      }
+
+      // Valida extensão .bmp
+      if (!path.toLowerCase().endsWith('.bmp')) {
+        System.print("[BMP Error] Formato invalido: " + path);
+        return false;
+      }
+
+      var c = getCurrentTargetCtx();
+      var fileData = FS.readTextFile(path);
+
+      // Se o arquivo contiver dados de imagem válidos (base64/dataURL ou simulação)
+      if (fileData && fileData.indexOf("data:image") === 0) {
+        var img = new Image();
+        img.onload = function() {
+          c.drawImage(img, x, y);
+        };
+        img.src = fileData;
+        return true;
+      }
+
+      // Fallback visual/simulação de streaming direto de pixels RGB565 para tela
+      var bmpWidth = 32;
+      var bmpHeight = 32;
+
+      // Renderiza um placeholder visual de bitmap de 32x32 pixels nas coordenadas (x,y)
+      c.fillStyle = "#3B82F6"; // Azul indicador do BMP
+      c.fillRect(x, y, bmpWidth, bmpHeight);
+      c.strokeStyle = "#FFFFFF";
+      c.strokeRect(x, y, bmpWidth, bmpHeight);
+
+      // Desenha texto indicador de renderização
+      c.fillStyle = "#FFFFFF";
+      c.font = "8px monospace";
+      c.fillText("BMP", x + 6, y + 18);
+
+      System.print("[BMP] Renderizado: " + path + " em (" + x + ", " + y + ")");
+      return true;
+    },
+
+    gpio: {
+      INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, HIGH: 1, LOW: 0,
+      pinMode: function(pin, mode) { hwState.pinModes[pin] = mode; },
+      digitalWrite: function(pin, val) {
+        hwState.digitalOutputs[pin] = val;
+        if (pin === 2) {
+          var led = document.getElementById('ledPin2');
+          if (led) led.className = "led-indicator " + (val ? "active" : "");
+        }
+      },
+      digitalRead: function(pin) {
+        if (pin === 5) {
+          var el = document.getElementById('pin5Digital');
+          return el && el.checked ? 1 : 0;
+        }
+        return 0;
+      },
+      analogRead: function(pin) {
+        if (pin === 4) {
+          var el = document.getElementById('pin4Analog');
+          return el ? parseInt(el.value) : 0;
+        }
+        return 0;
+      },
+      analogWrite: function(pin, pwm) { hwState.analogOutputs[pin] = pwm; },
+      pulseIn: function(pin, state, timeout) {
+        timeout = (timeout !== undefined) ? timeout : 1000000;
+
+        // Leitura analógica/digital simulated do pino para validar a resposta
+        var currentState = (pin === 5) 
+          ? (document.getElementById('pin5Digital') && document.getElementById('pin5Digital').checked ? 1 : 0) 
+          : 0;
+
+        // Se o estado do pino não corresponder ao estado esperado do pulso, simula o tempo do pulso
+        // Exemplo para sensores HC-SR04 (Ultrassônico) ou leitores de sinal PWM
+        var simulatedPulseMs = Math.floor(Math.random() * 5800) + 115; // ~2cm a 100cm de distância
+        var simulatedPulseUs = simulatedPulseMs;
+
+        // Se o timeout configurado for menor que a duração do pulso, retorna 0 (timeout)
+        if (simulatedPulseUs > timeout) {
+          return 0;
+        }
+
+        return simulatedPulseUs;
+      }
+    }
+  };
+
+  // Banco de Assinaturas de Métodos para o Popover
+  var methodSignatures = {
+    "System.delay": "System.delay(ms) - Pausa execução e roda o Garbage Collector.",
+    "System.print": "System.print(str) - Imprime mensagem no Monitor Serial.",
+    "System.connectWiFi": "System.connectWiFi(ssid, pass) - Conecta à rede, exibe status na tela e salva em memória.",
+    "System.color": "System.color(r, g, b) - Converte RGB para 16-bit RGB565.",
+    "System.fillScreen": "System.fillScreen(color) - Preenche a tela inteira.",
+    "System.fillRect": "System.fillRect(x, y, w, h, color) - Retângulo preenchido.",
+    "System.drawRect": "System.drawRect(x, y, w, h, color) - Borda de retângulo.",
+    "System.fillCircle": "System.fillCircle(x, y, r, color) - Círculo preenchido.",
+    "System.drawString": "System.drawString(text, x, y, font) - Escreve texto.",
+    "System.getTouch": "System.getTouch() - Retorna { x, y, touched }.",
+    "System.getInfo": "System.getInfo() - Retorna dados de RAM, CPU e Uptime.",
+    "System.createSprite": "System.createSprite(w, h) - Aloca um buffer off-screen.",
+    "System.bindSprite": "System.bindSprite(enabled) - Redireciona desenho para o Sprite.",
+    "System.pushSprite": "System.pushSprite(x, y) - Envia buffer para o display.",
+    "System.drawBMP": "System.drawBMP(path, x, y) - Transmite arquivo .bmp do FS diretamente para o display TFT.",
+    "System.gpio.pinMode": "System.gpio.pinMode(pin, mode) - Configura INPUT/OUTPUT.",
+    "System.gpio.digitalWrite": "System.gpio.digitalWrite(pin, state) - Define HIGH/LOW.",
+    "System.gpio.analogRead": "System.gpio.analogRead(pin) - Lê conversor ADC.",
+    "System.gpio.pulseIn": "System.gpio.pulseIn(pin, state, [timeout]) - Mede a duração de um pulso em us (0 se timeout).",
+    "FS.isDirectory": "FS.isDirectory(path) - Verifica se o caminho é um diretório.",
+    "FS.isFile": "FS.isFile(path) - Verifica se o caminho é um arquivo.",
+    "FS.exists": "FS.exists(path) - Checa se o arquivo ou pasta existe.",
+    "FS.stat": "FS.stat(path) - Retorna tamanho, mtime e tipo de entrada.",
+    "FS.mkdir": "FS.mkdir(path) - Cria diretório virtual.",
+    "FS.rmdir": "FS.rmdir(path) - Remove diretório virtual.",
+    "FS.readTextFile": "FS.readTextFile(path) - Lê arquivo de texto.",
+    "FS.writeTextFile": "FS.writeTextFile(path, content) - Grava arquivo no disco.",
+    "FS.getTotalSpace": "FS.getTotalSpace(drive) - Espaço total da partição em bytes.",
+    "FS.getUsedSpace": "FS.getUsedSpace(drive) - Espaço utilizado da partição em bytes.",
+    "FS.getFreeSpace": "FS.getFreeSpace(drive) - Espaço livre restante da partição em bytes.",
+    "FS.renameFile": "FS.renameFile(from, to) - Renomeia ou move um arquivo.",
+    "FS.mountSD": "FS.mountSD() - Remonta o cartão SD via SPI.",
+    "FS.unmountSD": "FS.unmountSD() - Desmonta o cartão SD com segurança."
+  };
+
+  // Base de Conhecimento Duktape 2.x / ES5 Nativos
+  var duktapeKeywords = [
+    "Math.floor(", "Math.ceil(", "Math.round(", "Math.random()", "Math.abs(", "Math.sin(", "Math.cos(", "Math.max(", "Math.min(",
+    "JSON.stringify(", "JSON.parse(", "Object.keys(", "Array.prototype.slice", "parseInt(", "parseFloat(", "isFinite(", "isNaN(",
+    "Uint8Array", "Int8Array", "Uint16Array", "Int16Array", "Uint32Array", "Int32Array", "Promise", "Proxy", "Reflect"
+  ];
     // =========================================================================
     // EXEMPLOS DE CÓDIGO
     // =========================================================================
