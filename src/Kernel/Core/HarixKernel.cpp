@@ -89,29 +89,25 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
             tft.drawString("setting to free the ram", 10, 80, 2);
             tft.drawString("and make this app running", 10, 100, 2);
             
-            // Draw an 'X' to close (com instrução visual de tecla para o Cardputer)
+            // Draw an 'X' to close
             tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
             tft.setTextColor(TFT_RED, TFT_WHITE);
             tft.drawString("X", 215, 8, 2);
             
             uint16_t tx, ty;
             while(true) {
-                // 1. Checa por Touch no botão 'X'
                 if (getTouch(&tx, &ty)) {
                     if (tx >= 200 && ty <= 40) break;
                 }
                 
-                // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
                 BoardKey key = getKeyInput();
                 if (key != BOARD_KEY_NONE) {
-                    // Qualquer tecla (ou se preferir, limite a BOARD_KEY_BACK / BOARD_KEY_ENTER) sai da tela
                     break; 
                 }
 
                 delay(50);
             }
             duk_pop(ctx);
-            // This is a soft-error (not Duktape fatal), so we can just return safely to Launcher
             return;
         }
         
@@ -123,17 +119,13 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
         tft.setTextDatum(TL_DATUM);
         tft.drawString("JS EXCEPTION!", 10, 10, 4);
         
-        // Draw up to 10 lines of the error message
-        int yPos = 50;
-        int startIdx = 0;
-        while (startIdx < errorMsg.length() && yPos < 300) {
-            int nextNewline = errorMsg.indexOf('\n', startIdx);
-            if (nextNewline == -1) nextNewline = errorMsg.length();
-            String line = errorMsg.substring(startIdx, nextNewline);
-            tft.drawString(line, 10, yPos, 2);
-            yPos += 20;
-            startIdx = nextNewline + 1;
-        }
+        // --- CONFIGURAÇÃO DA QUEBRA DE LINHA AUTOMÁTICA ---
+        tft.setTextWrap(true, true); // Ativa wrap nos eixos X e Y
+        tft.setTextFont(2);          // Fonte padrão tamanho 2
+        tft.setCursor(10, 45);       // Define a posição inicial do cursor
+
+        // Escreve a mensagem de erro inteira; o print cuida do wrap de borda e dos \n
+        tft.print(errorMsg);
         
         // Draw an 'X' to close
         tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
@@ -142,12 +134,10 @@ void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
         
         uint16_t tx, ty;
         while(true) {
-            // 1. Checa por Touch no botão 'X'
             if (getTouch(&tx, &ty)) {
                 if (tx >= 200 && ty <= 40) break;
             }
 
-            // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
             BoardKey key = getKeyInput();
             if (key != BOARD_KEY_NONE) {
                 break;

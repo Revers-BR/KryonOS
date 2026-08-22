@@ -153,13 +153,13 @@ void drawIconWiFi(int16_t x, int16_t y) {
         uint16_t colorArc3 = (rssi > -55) ? activeColor : inactiveColor; // Nível 3
 
         // 3. Renderiza os arcos e o ponto central
-        tft.drawCircleHelper(x + 6, y + 10, 6, 1, colorArc3); // Arco Externo
-        tft.drawCircleHelper(x + 6, y + 10, 4, 1, colorArc2); // Arco Médio
-        tft.drawCircleHelper(x + 6, y + 10, 2, 1, colorArc1); // Arco Interno
-        tft.fillCircle(x + 6, y + 10, 1, colorDot);           // Ponto Central
+        tft.drawCircleHelper(x + 6, y + 9, 6, 1, colorArc3); // Arco Externo
+        tft.drawCircleHelper(x + 6, y + 9, 4, 1, colorArc2); // Arco Médio
+        tft.drawCircleHelper(x + 6, y + 9, 2, 1, colorArc1); // Arco Interno
+        tft.fillCircle(x + 6, y + 9, 1, colorDot);           // Ponto Central
     } else {
         // Desconectado: Exibe apenas um 'X' ou ponto vermelho
-        tft.fillCircle(x + 6, y + 10, 1, TFT_RED);
+        tft.fillCircle(x + 6, y + 9, 1, TFT_RED);
     }
 }
 
@@ -188,23 +188,42 @@ void drawIconSD(int16_t x, int16_t y) {
             }
         }
 
-        // Desenha a estrutura do cartão SD com a cor dinâmica calculada
-        tft.drawRect(x, y, 9, 11, color);
-        tft.drawLine(x + 2, y, x, y + 2, color); // Canto chanfrado do SD
-        
-        // Linhas dos pinos do SD
-        tft.drawLine(x + 2, y + 2, x + 2, y + 4, color);
-        tft.drawLine(x + 4, y + 2, x + 4, y + 4, color);
-        tft.drawLine(x + 6, y + 2, x + 6, y + 4, color);
+        // Se a tela for pequena (ex: 240x135), usa o modelo básico visível
+        if (tft.height() <= 135 || tft.width() <= 135) {
+            
+            // Modelo Básico (240x135):
+            // Corpo preenchido para dar contraste (12x14px)
+            tft.fillRect(x, y, 12, 16, color);
+            
+            // Canto chanfrado superior esquerdo (Corta o canto)
+            tft.fillRect(x, y, 3, 5, TFT_BLACK);
+            tft.drawLine(x + 3, y, x, y + 2, color);
+
+            // Módulo de pinos (Três detalhes pretos no topo para identificar como SD)
+            tft.drawFastVLine(x + 4, y + 2, 6, TFT_BLACK);
+            tft.drawFastVLine(x + 7, y + 2, 6, TFT_BLACK);
+            tft.drawFastVLine(x + 9, y + 2, 6, TFT_BLACK);
+
+        } else {
+            
+            // Modelo Original Mantido Intacto (240x320)
+            tft.drawRect(x, y, 9, 11, color);
+            tft.drawLine(x + 2, y, x, y + 2, color); // Canto chanfrado do SD
+            
+            // Linhas dos pinos do SD
+            tft.drawLine(x + 2, y + 2, x + 2, y + 4, color);
+            tft.drawLine(x + 4, y + 2, x + 4, y + 4, color);
+            tft.drawLine(x + 6, y + 2, x + 6, y + 4, color);
+        }
     }
 }
 
 // Desenha o Ícone da Bateria dinâmico de acordo com a porcentagem
 void drawIconBattery(int16_t x, int16_t y, uint16_t color) {
     // Corpo da bateria (14x8 pixels)
-    tft.drawRect(x, y + 1, 14, 8, color);
+    tft.drawRect(x, y + 2, 14, 8, color);
     // Polo positivo
-    tft.fillRect(x + 14, y + 3, 2, 4, color);
+    tft.fillRect(x + 14, y + 4, 2, 4, color);
 
     // Obtém o percentual real da placa
     int percent = getBatteryPercent();
@@ -221,11 +240,11 @@ void drawIconBattery(int16_t x, int16_t y, uint16_t color) {
     }
 
     // Limpa a área interna antes de desenhar o nível
-    tft.fillRect(x + 2, y + 3, 10, 4, TFT_BLACK);
+    tft.fillRect(x + 2, y + 4, 10, 4, TFT_BLACK);
 
     // Desenha o preenchimento proporcional
     if (fillWidth > 0) {
-        tft.fillRect(x + 2, y + 3, fillWidth, 4, fillColor);
+        tft.fillRect(x + 2, y + 4, fillWidth, 4, fillColor);
     }
 }
 

@@ -20,6 +20,7 @@ TFT_eSPI tft = TFT_eSPI();
 
 bool hasTouch(void) { return false; }
 bool hasKeyboard(void) { return true; }
+bool hasBattery(void) { return true; }
 
 // Pinos físicos da matriz do Cardputer v1.1
 static const gpio_num_t S_SELECT_PINS[3] = { GPIO_NUM_8, GPIO_NUM_9, GPIO_NUM_11 };
@@ -442,6 +443,34 @@ uint64_t getSDUsedBytes(void) {
 
 bool isSDMounted() {
     return SD.cardType() != CARD_NONE;
+}
+
+// Retorna a tensão real da bateria em Volts (ex: 3.78)
+float getBatteryVoltage(void) {
+    // Configura a resolução do ADC para 12-bits (caso não tenha configurado no setup)
+    analogReadResolution(12);
+    
+    // Leitura analógica em milivolts usando a calibração de fábrica do ESP32-S3
+    uint32_t raw_mv = analogReadMilliVolts(BAT_ADC_PIN);
+    
+    // Divisor de tensão 1:1 interno do Cardputer (multiplica por 2)
+    // Converte de mV para Volts (/ 1000.0)
+    float voltage = (raw_mv * 2.0f) / 1000.0f; 
+    
+    return voltage;
+}
+
+// Retorna a porcentagem estimada de 0% a 100%
+int getBatteryPercent(void) {
+    float v = getBatteryVoltage();
+    
+    // Tensão limite de baterias LiPo/Li-Ion: 3.3V (0%) a 4.2V (100%)
+    if (v >= 4.2f) return 100;
+    if (v <= 3.3f) return 0;
+
+    int percent = (int)((v - 3.3f) / (4.2f - 3.3f) * 100.0f);
+    
+    return constrain(percent, 0, 100);
 }
 
 #endif // TARGET_CARDPUTER

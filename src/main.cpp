@@ -53,15 +53,28 @@ void setup() {
     initTouch();
     initSD();
 
+    // Obtém as dimensões REAIS da tela após o setRotation(1)
+    const int16_t screenW = tft.width();  // 240
+    const int16_t screenH = tft.height(); // 135 em landscape (ou 320 no display maior)
+
+    // Recalcula o centro dinamicamente
+    const int16_t centerX = screenW / 2;
+    const int16_t centerY = screenH / 2;
+
+    // Detecta se é uma tela de baixa altura (ex: 135px) para ajustar a fonte e espaçamentos
+    const bool isSmallScreen = (screenH <= 135);
+    const uint8_t fontNum = isSmallScreen ? 1 : 2;       // Fonte menor em telas compactas
+    const int16_t textOffset = isSmallScreen ? 12 : 15;  // Espaçamento vertical reduzido
+
     // Tela de Boot Inicial
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("Booting KryonOS...", cx, cy, 2);
+    tft.drawString("Booting KryonOS...", centerX, centerY, fontNum);
 
     // 3. Sistemas de Arquivos e Horário
     if (!FileSystem::init()) {
         Serial.println("File System Warning: Failed to mount.");
-        tft.drawString("FS Mount Warning!", cx, cy + 20, 2);
+        tft.drawString("FS Mount Warning!", centerX, centerY + textOffset, fontNum);
         delay(1000);
     }
     TimeManager::init();
@@ -69,13 +82,17 @@ void setup() {
     // Initialize Web Manager (Only if not disabled)
     if (!FileSystem::exists("/local/nowifi.txt")) {
         tft.fillScreen(TFT_BLACK);
-        tft.drawString("Connecting WiFi...", cx, cy, 2);
+        tft.drawString("Connecting WiFi...", centerX, centerY, fontNum);
         Serial.println("DEBUG: Starting WebManager...");
         
         if (WebManager::init()) {
             tft.fillScreen(TFT_BLACK);
-            tft.drawString("WiFi Connected!", cx, cy - 15, 2);
-            tft.drawString(WebManager::getIPAddress(), cx, cy + 15, 2);
+            tft.drawString("WiFi Connected!", centerX, centerY - textOffset, fontNum);
+            tft.drawString(WebManager::getIPAddress(), centerX, centerY + textOffset, fontNum);
+            
+            // Grava na memória/FS que conectou ao Wi-Fi com sucesso
+            FileSystem::writeTextFile("/local/last_wifi_status.txt", "CONNECTED");
+            
             delay(2000);
         }
         Serial.println("DEBUG: WebManager initialized.");
@@ -87,16 +104,18 @@ void setup() {
     // 6. Scan de Aplicações
     Serial.println("DEBUG: Scanning Local Apps...");
     tft.fillScreen(TFT_BLACK);
-    tft.drawString("Loading Apps...", cx, cy - 15, 2);
 
-    // Barra de Carregamento Adaptável à Resolução
-    const int16_t barWidth = (DISP_HOR_RES * 80) / 100; // 80% da largura da tela
-    const int16_t barHeight = 12;                       // Altura ajustada
-    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;  // Centralizado
-    const int16_t barY = cy + 15;                        // Posição abaixo do texto
+    // Na tela pequena, posiciona o texto um pouco acima do centro para dar espaço à barra
+    int16_t textY = isSmallScreen ? (centerY - 10) : (centerY - 15);
+    tft.drawString("Loading Apps...", centerX, textY, fontNum);
 
-    tft.drawRect(barX, barY, barWidth, barHeight, TFT_WHITE); // Contorno da barra de progresso
+    // Barra de Carregamento Adaptável
+    const int16_t barWidth = (screenW * 80) / 100;                 // 80% da largura (ex: 192px)
+    const int16_t barHeight = isSmallScreen ? 8 : 12;             // Barra mais fina em telas de 135px
+    const int16_t barX = (screenW - barWidth) / 2;                // Centralizado horizontalmente
+    const int16_t barY = isSmallScreen ? (centerY + 8) : (centerY + 15); // Posição vertical proporcional
 
+    tft.drawRect(barX, barY, barWidth, barHeight, TFT_WHITE);     // Contorno da barra de progresso
     LauncherUI::scanLocalApps();
     LauncherUI::needsRescan = false;
     Serial.println("DEBUG: Local Apps Scanned.");
