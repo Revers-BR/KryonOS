@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>KryonOS ESP32 JS Emulator & IDE</title>
+  
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      ⚡ KryonOS JS IDE
+      <span class="badge" id="profileBadge">ESP32 240x320 | Duktape v1.0</span>
+    </div>
+    <div class="controls">
+      <!-- Seletor dos 4 Perfis de Dispositivo -->
+      <select id="deviceSelector" onchange="changeDeviceProfile()">
+        <option value="TOUCH_320">1. Touch (240x320)</option>
+        <option value="TOUCH_135">2. Mini Touch (240x135)</option>
+        <option value="KEY_320">3. Keypad (240x320)</option>
+        <option value="KEY_135">4. Cardputer / Pocket (240x135)</option>
+      </select>
+
+      <select id="exampleSelector" onchange="loadSelectedExample()">
+        <option value="dashboard">0. Modern UI Dashboard</option>
+        <option value="keyboard">1. Entrada Teclado (Keypad API)</option>
+        <option value="graphics">2. Display & Desenho (Graphics API)</option>
+        <option value="fs">3. Sistema de Arquivos (FS API)</option>
+        <option value="gpio">4. Hardware & Pinos (GPIO API)</option>
+        <option value="system">5. Sistema & OS (System API)</option>
+        <option value="sprites">6. Buffering & Sprites (Sprite API)</option>
+      </select>
+      <button class="btn-run" onclick="runScript()">▶ Executar</button>
+      <button class="btn-stop" onclick="stopScript('Execução interrompida pelo usuário.')">⏹ Parar</button>
+      <button onclick="rebootSystem()">🔄 Reboot</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="main-container">
+
+    <!-- IDE Code Editor -->
+    <div class="ide-pane">
+      <div class="pane-header">
+        <span>EDITOR JAVASCRIPT (ES5.1 / DUKTAPE)</span>
+        <span id="scriptStatus" style="color:var(--accent-color);">Pronto</span>
+      </div>
+      <textarea id="codeEditor"></textarea>
+      <div id="methodPopover"></div>
+      <div id="linterBox" class="linter-warnings"></div>
+    </div>
+
+    <!-- Hardware Emulator -->
+    <div class="hardware-pane">
+      <div class="esp32-board">
+        <div class="board-title" id="boardTitleText">KryonOS ESP32 Hardware Kit</div>
+        <div class="screen-wrapper">
+          <canvas id="tftDisplay" width="240" height="320"></canvas>
+          <div class="exit-trigger-zone" title="Área de Saída de Emergência (x>=200, y<=40)">EXIT</div>
+        </div>
+        <div class="board-status">
+          <span><span class="led-indicator power"></span>PWR</span>
+          <span><span id="ledWifi" class="led-indicator active"></span>WiFi</span>
+          <span><span id="ledPin2" class="led-indicator"></span>GPIO2</span>
+          <span id="hudTouch">Touch: OFF</span>
+          <span id="hudKey">Key: NONE</span>
+        </div>
+
+        <!-- Teclado On-Screen / D-Pad para Perfis com Keyboard e Dispositivos Mobile -->
+        <div id="virtualKeyboard" class="virtual-keyboard">
+          <div class="dpad-row">
+            <button class="vk-btn" onmousedown="System.triggerKeyEvent('UP', 1, '', true)" onmouseup="System.triggerKeyEvent('NONE', 0, '', false)" ontouchstart="System.triggerKeyEvent('UP', 1, '', true)" ontouchend="System.triggerKeyEvent('NONE', 0, '', false)">▲</button>
+          </div>
+          <div class="dpad-row">
+            <button class="vk-btn" onmousedown="System.triggerKeyEvent('LEFT', 3, '', true)" onmouseup="System.triggerKeyEvent('NONE', 0, '', false)" ontouchstart="System.triggerKeyEvent('LEFT', 3, '', true)" ontouchend="System.triggerKeyEvent('NONE', 0, '', false)">◄</button>
+            <button class="vk-btn ok-btn" onmousedown="System.triggerKeyEvent('ENTER', 5, '\n', true)" onmouseup="System.triggerKeyEvent('NONE', 0, '', false)" ontouchstart="System.triggerKeyEvent('ENTER', 5, '\n', true)" ontouchend="System.triggerKeyEvent('NONE', 0, '', false)">OK</button>
+            <button class="vk-btn" onmousedown="System.triggerKeyEvent('RIGHT', 4, '', true)" onmouseup="System.triggerKeyEvent('NONE', 0, '', false)" ontouchstart="System.triggerKeyEvent('RIGHT', 4, '', true)" ontouchend="System.triggerKeyEvent('NONE', 0, '', false)">►</button>
+          </div>
+          <div class="dpad-row">
+            <button class="vk-btn" onmousedown="System.triggerKeyEvent('DOWN', 2, '', true)" onmouseup="System.triggerKeyEvent('NONE', 0, '', false)" ontouchstart="System.triggerKeyEvent('DOWN', 2, '', true)" ontouchend="System.triggerKeyEvent('NONE', 0, '', false)">▼</button>
+            <button class="vk-btn esc-btn" onmousedown="System.triggerKeyEvent('ESC', 6, '', true)">ESC</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hardware Dashboard Controls -->
+      <div class="hw-controls">
+        <div class="hw-title">PAINEL DE HARDWARE SIMULADO</div>
+        <div class="pin-row">
+          <span>GPIO 4 (ADC Analog)</span>
+          <input type="range" id="pin4Analog" min="0" max="4095" value="1850" oninput="updateHwState()">
+          <span id="valPin4">1850</span>
+        </div>
+        <div class="pin-row">
+          <span>GPIO 5 (Digital Switch)</span>
+          <input type="checkbox" id="pin5Digital" onchange="updateHwState()">
+        </div>
+        <div class="pin-row">
+          <span>WiFi Conectado</span>
+          <input type="checkbox" id="wifiToggle" checked onchange="updateHwState()">
+        </div>
+        <div class="pin-row">
+          <span>Temp. Core CPU (°C)</span>
+          <span id="cpuTempReadout">38.5 °C</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: Serial Monitor & Filesystem -->
+    <div class="sidebar-pane">
+      <div class="pane-header">MONITOR SERIAL (115200 BAUD)</div>
+      <div id="consoleOutput" class="console-output"></div>
+      
+      <div class="pane-header" style="border-top:1px solid var(--panel-border);">SISTEMA DE ARQUIVOS (FS)</div>
+      <div id="fsTree" class="fs-tree"></div>
+    </div>
+
+  </div>
+
+  <!-- CodeMirror JS Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/hint/show-hint.min.js" crossorigin="anonymous"></script>
+
+  <!-- KryonOS System JS Engine -->
+  <script src="js/signatures.js"></script>
+  <script src="js/fs.js"></script>
+  <script src="js/system.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>
