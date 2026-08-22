@@ -24,6 +24,7 @@ static SPIClass sdSPI(VSPI);
 // --- Capacidades de Entrada da Placa ---
 bool hasTouch(void) { return true; }
 bool hasKeyboard(void) { return false; }
+bool hasBattery(void) { return false; }
 
 // --- Interface de Leitura Direta do Touch ---
 
@@ -85,7 +86,6 @@ void initDisplay(void) {
 
     tft.init();
     tft.setRotation(0);
-    tft.setSwapBytes(true);
     tft.fillScreen(TFT_BLACK);
 }
 
@@ -110,10 +110,6 @@ void initTouch(void) {
 }
 
 // --- Gerenciamento do Cartão SD (SPI) ---
-
-bool sdMounted() {
-    
-}
 
 fs::FS* initSD(void) {
     if (SD.cardType() != CARD_NONE) {
@@ -157,6 +153,10 @@ uint64_t getSDUsedBytes(void) {
     return SD.usedBytes();
 }
 
+bool isSDMounted() {
+    return SD.cardType() != CARD_NONE;
+}
+
 // --- Métodos Dummy para Placas Sem Teclado Físico ---
 
 BoardKey getKeyInput(void) { return BOARD_KEY_NONE; }
@@ -165,5 +165,7 @@ void clearModifiers() {}
 char keyToChar(BoardKey) { return '\0'; }
 bool isShiftActive() { return false; }
 bool isFnActive() { return false; }
+float getBatteryVoltage(void) { return 0;}
+int getBatteryPercent(void){ return 0; }
 
 #endif // TARGET_CYD

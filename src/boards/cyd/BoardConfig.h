@@ -23,7 +23,7 @@
 #define TOUCHSCREEN_CS_PIN   33
 #define TOUCHSCREEN_IRQ_PIN  36
 
-// --- Pinos do Cartão SD (Compartilha o Barramento VSPI da Tela) ---
+// --- Pinos do Cartão SD
 #define SD_SCK_PIN  18
 #define SD_MISO_PIN 19
 #define SD_MOSI_PIN 23

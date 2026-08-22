@@ -385,7 +385,6 @@ void initDisplay(void) {
 
     tft.init();
     tft.setRotation(1); // MANTENHA 1 PARA LANDSCAPE 240x135
-    tft.setSwapBytes(true);
     tft.fillScreen(TFT_BLACK);
 
     Serial.printf("[Board Cardputer] Display inicializado: %dx%d\n", DISP_HOR_RES, DISP_VER_RES);
