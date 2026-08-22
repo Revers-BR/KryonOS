@@ -35,9 +35,6 @@
 #define STATE_HELP_CENTER       14
 
 int currentState = STATE_LAUNCHER;
-// Definição do centro horizontal e vertical dinâmicos
-const int16_t cx = DISP_HOR_RES / 2;
-const int16_t cy = DISP_VER_RES / 2;
 
 // Declaração da referência externa do TFT criada no Board.cpp
 extern TFT_eSPI tft;

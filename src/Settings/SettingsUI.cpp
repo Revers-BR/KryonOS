@@ -644,6 +644,9 @@ void SettingsUI::drawAbout() {
 }
 
 // Renderização para telas 240x320
+// Variável de controle de página (adicione como membro da classe SettingsUI ou estática)
+static uint8_t aboutCurrentPage = 0; // 0 = Memória/Sistema, 1 = Storage/Ações
+
 void SettingsUI::drawTallAbout() {
     // Moldura principal
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
@@ -664,97 +667,172 @@ void SettingsUI::drawTallAbout() {
     uint64_t sdUsed = getSDUsedBytes();
     uint64_t sdFree = sdTotal - sdUsed;
 
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setTextDatum(TL_DATUM);
-    tft.drawString("Internal Memory (LittleFS)", 15, 40, 2);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Total: " + formatBytes(fsTotal), 25, 60, 2);
-    tft.drawString("Used:  " + formatBytes(fsUsed), 25, 80, 2);
-    tft.drawString("Free:  " + formatBytes(fsFree), 25, 100, 2);
+    // Get RAM Info
+    uint32_t ramTotal = ESP.getHeapSize();
+    uint32_t ramFree = ESP.getFreeHeap();
+    uint32_t ramUsed = ramTotal - ramFree;
 
-    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-    tft.drawString("External Memory (SD Card)", 15, 125, 2);
+    tft.setTextDatum(TL_DATUM);
+
+    // 1. Resolução e Sistema
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.drawString("System & Display", 15, 40, 2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("OS: KryonOS " + String(KRYONOS_VERSION), 25, 58, 2);
+    tft.drawString("Res: " + String(tft.width()) + "x" + String(tft.height()), 25, 74, 2);
+
+    // 2. RAM (SRAM Interna)
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.drawString("Internal RAM", 15, 94, 2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("Total: " + formatBytes(ramTotal), 25, 112, 2);
+    tft.drawString("Used : " + formatBytes(ramUsed), 25, 128, 2);
+    tft.drawString("Free : " + formatBytes(ramFree), 25, 144, 2);
+
+    // 3. PSRAM (Se disponível)
+    if (psramFound()) {
+        uint32_t psramTotal = ESP.getPsramSize();
+        uint32_t psramFree = ESP.getFreePsram();
+        uint32_t psramUsed = psramTotal - psramFree;
+
+        tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
+        tft.drawString("External PSRAM", 15, 164, 2);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("Total: " + String((uint32_t)(psramTotal / 1024)) + " KB", 25, 180, 2);
+        tft.drawString("Free : " + String((uint32_t)(psramFree / 1024)) + " KB", 25, 196, 2);
+    } else {
+        tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        tft.drawString("PSRAM: Not Available", 15, 164, 2);
+    }
+
+    // 4. Armazenamentos
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.drawString("Storage (FS / SD)", 15, 216, 2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("FS Free: " + formatBytes(fsFree) + " / " + formatBytes(fsTotal), 25, 234, 2);
     if (sdTotal > 0) {
-        tft.drawString("Total: " + formatBytes(sdTotal), 25, 145, 2);
-        tft.drawString("Used:  " + formatBytes(sdUsed), 25, 165, 2);
-        tft.drawString("Free:  " + formatBytes(sdFree), 25, 185, 2);
+        tft.drawString("SD Free: " + formatBytes(sdFree) + " / " + formatBytes(sdTotal), 25, 250, 2);
     } else {
         tft.setTextColor(TFT_RED, TFT_BLACK);
-        tft.drawString("SD Card not mounted!", 25, 145, 2);
+        tft.drawString("SD Card: Not Mounted", 25, 250, 2);
     }
-    
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Free Heap: " + String(ESP.getFreeHeap() / 1024) + " KB", 15, 205, 2);
-    
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.drawString(String("KryonOS ") + KRYONOS_VERSION, 15, 222, 2);
 
     // Reset Apps Button
-    tft.fillRoundRect(60, 248, 120, 30, 4, TFT_RED);
-    tft.drawRoundRect(60, 248, 120, 30, 4, TFT_WHITE);
+    tft.fillRoundRect(30, 270, 180, 22, 4, TFT_RED);
+    tft.drawRoundRect(30, 270, 180, 22, 4, TFT_WHITE);
     tft.setTextColor(TFT_WHITE, TFT_RED);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("Reset App Data", 120, 263, 2);
+    tft.drawString("Reset App Data", 120, 281, 2);
 
     // Touch Footer
-    tft.drawRoundRect(5, 285, 230, 28, 4, TFT_WHITE);
+    tft.drawRoundRect(5, 296, 230, 18, 4, TFT_WHITE);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("BACK", 120, 299, 2);
+    tft.drawString("BACK", 120, 305, 1);
 }
 
-// Renderização para telas 240x135 (Compact / Cardputer)
+// Renderização Paginada para telas 240x135 (Cardputer / Compact)
 void SettingsUI::drawCompactAbout() {
-    // Header
-    tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    // 1. Limpa o fundo da tela para eliminar qualquer vestígio/lixo da página anterior
+    tft.fillScreen(TFT_BLACK);
+
+    // Header Bar com Seletor de Página
+    tft.fillRoundRect(2, 2, 236, 16, 3, TFT_DARKGREY);
     tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("About Device", 120, 10, 2);
-
-    uint64_t fsTotal = LittleFS.totalBytes();
-    uint64_t fsFree = fsTotal - LittleFS.usedBytes();
-    uint64_t sdTotal = getSDTotalBytes();
-    uint64_t sdFree = sdTotal - getSDUsedBytes();
+    
+    String headerText = "About (" + String(aboutCurrentPage + 1) + "/2) - ";
+    headerText += (aboutCurrentPage == 0) ? "RAM & Sys" : "Storage & Reset";
+    tft.drawString(headerText, 120, 9, 1);
 
     tft.setTextDatum(TL_DATUM);
-    
-    // Coluna 1: Memória Interna (Coordenadas ajustadas)
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.drawString("INT (FS)", 10, 25, 1);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Free:" + formatBytes(fsFree), 10, 37, 1);
-    tft.drawString("Tot :" + formatBytes(fsTotal), 10, 49, 1);
 
-    // Coluna 2: Cartão SD
-    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-    tft.drawString("EXT (SD)", 125, 25, 1);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (sdTotal > 0) {
-        tft.drawString("Free:" + formatBytes(sdFree), 125, 37, 1);
-        tft.drawString("Tot :" + formatBytes(sdTotal), 125, 49, 1);
+    if (aboutCurrentPage == 0) {
+        // ================= PÁGINA 1: RAM, PSRAM, SISTEMA & RESOLUÇÃO =================
+        uint32_t ramTotal = ESP.getHeapSize();
+        uint32_t ramFree = ESP.getFreeHeap();
+        uint32_t ramUsed = ramTotal - ramFree;
+
+        // Linha 1: Sistema e Resolução
+        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+        tft.drawString("OS: KryonOS " + String(KRYONOS_VERSION), 5, 22, 1);
+        tft.drawString("Res: " + String(tft.width()) + "x" + String(tft.height()), 130, 22, 1);
+
+        // Bloco SRAM
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+        tft.drawString("--- SRAM ---", 5, 36, 1);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("Tot:" + formatBytes(ramTotal), 5, 48, 1);
+        tft.drawString("Usd:" + formatBytes(ramUsed), 5, 60, 1);
+        tft.drawString("Fre:" + formatBytes(ramFree), 5, 72, 1);
+
+        // Bloco PSRAM
+        tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
+        tft.drawString("--- PSRAM ---", 130, 36, 1);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        
+        if (psramFound()) {
+            uint32_t psramTotal = ESP.getPsramSize();
+            uint32_t psramFree = ESP.getFreePsram();
+            uint32_t psramUsed = psramTotal - psramFree;
+
+            tft.drawString("Tot:" + formatBytes(psramTotal), 130, 48, 1);
+            tft.drawString("Usd:" + formatBytes(psramUsed), 130, 60, 1);
+            tft.drawString("Fre:" + formatBytes(psramFree), 130, 72, 1);
+        } else {
+            tft.setTextColor(TFT_RED, TFT_BLACK);
+            tft.drawString("N/A", 130, 48, 1);
+        }
+
+        // Dica visual de navegação
+        tft.setTextColor(TFT_CYAN, TFT_BLACK);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("Press [TAB/RIGHT] for Storage >", 120, 92, 1);
+
     } else {
-        tft.setTextColor(TFT_RED, TFT_BLACK);
-        tft.drawString("SD Off", 125, 37, 1);
+        // ================= PÁGINA 2: ARMAZENAMENTO & RESET =================
+        uint64_t fsTotal = LittleFS.totalBytes();
+        uint64_t fsFree = fsTotal - LittleFS.usedBytes();
+        uint64_t sdTotal = getSDTotalBytes();
+        uint64_t sdFree = sdTotal - getSDUsedBytes();
+
+        // Coluna 1: Memória Interna (FS)
+        tft.setTextColor(TFT_CYAN, TFT_BLACK);
+        tft.drawString("INT (LittleFS)", 10, 22, 1);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("Free:" + formatBytes(fsFree), 10, 34, 1);
+        tft.drawString("Tot :" + formatBytes(fsTotal), 10, 46, 1);
+
+        // Coluna 2: Cartão SD
+        tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+        tft.drawString("EXT (SD Card)", 125, 22, 1);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        if (sdTotal > 0) {
+            tft.drawString("Free:" + formatBytes(sdFree), 125, 34, 1);
+            tft.drawString("Tot :" + formatBytes(sdTotal), 125, 46, 1);
+        } else {
+            tft.setTextColor(TFT_RED, TFT_BLACK);
+            tft.drawString("SD Off", 125, 34, 1);
+        }
+
+        // Botão Reset App Data
+        tft.fillRoundRect(10, 62, 220, 20, 4, TFT_RED);
+        tft.drawRoundRect(10, 62, 220, 20, 4, TFT_WHITE);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("Reset App Data", 120, 72, 1);
+
+        // Dica visual de navegação
+        tft.setTextColor(TFT_CYAN, TFT_BLACK);
+        tft.setTextDatum(MC_DATUM);
+        tft.drawString("< Press [TAB/LEFT] for System", 120, 92, 1);
     }
 
-    // Sistema e Heap
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.drawString("Heap: " + String(ESP.getFreeHeap() / 1024) + "KB", 10, 63, 1);
-    tft.drawString(String("Ver: ") + KRYONOS_VERSION, 125, 63, 1);
-
-    // Botão Reset
-    tft.fillRoundRect(10, 78, 220, 22, 4, TFT_RED);
-    tft.drawRoundRect(10, 78, 220, 22, 4, TFT_WHITE);
-    tft.setTextColor(TFT_WHITE, TFT_RED);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("Reset App Data", 120, 89, 2);
-
-    // Rodapé
-    tft.fillRoundRect(2, 110, 236, 22, 3, TFT_NAVY);
+    // Rodapé Fixo
+    tft.fillRoundRect(2, 108, 236, 24, 3, TFT_NAVY);
     tft.setTextColor(TFT_WHITE, TFT_NAVY);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("ESC/BACK: Return", 120, 121, 1);
+    tft.drawString("TAB/SETA: Mudar Pagina | ESC: Voltar", 120, 120, 1);
 }
 
 // Dialog Overlay adaptativo com suporte a `resetConfirmIndex`
@@ -842,13 +920,28 @@ void SettingsUI::handleAboutKeyInput(BoardKey key) {
 
     // Navegação na tela "About" normal
     switch (key) {
+        // Alternar páginas na tela compacta (Cardputer / 240x135)
+        case BOARD_KEY_LEFT:
+        case BOARD_KEY_RIGHT:
+        case BOARD_KEY_TAB: // Se BOARD_KEY_TAB existir no seu enum
+            aboutCurrentPage = (aboutCurrentPage == 0) ? 1 : 0;
+            
+            // Redesenha a tela correta de acordo com a resolução do display
+            if (tft.height() <= 135 || tft.width() <= 135) {
+                drawCompactAbout();
+            } else {
+                drawTallAbout();
+            }
+            break;
+
         case BOARD_KEY_ENTER:
         case BOARD_KEY_DOWN:
             actionOpenResetDialog();
             break;
 
         case BOARD_KEY_ESC:
-            currentState = 1; // STATE_SETTINGS
+            aboutCurrentPage = 0; // Reseta para a página 1 ao sair
+            currentState = 1;     // STATE_SETTINGS
             break;
 
         default:
