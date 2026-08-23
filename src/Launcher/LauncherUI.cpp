@@ -5,8 +5,12 @@
 
 extern int currentState;
 
+LauncherItem LauncherUI::items[50]; 
 String LauncherUI::appPaths[50];
 String LauncherUI::appNames[50];
+String LauncherUI::appCategories[50];
+String LauncherUI::currentCategory;
+int LauncherUI::totalItems = 0;
 bool   LauncherUI::appIsFolder[50];
 int LauncherUI::appCount = 0;
 int LauncherUI::selectedIndex = 1;
@@ -22,14 +26,12 @@ void LauncherUI::requestRescan() {
 void LauncherUI::scanLocalApps() {
     appCount = 0;
     
-    // Configurações dinâmicas para a barra de carregamento
     const int16_t cy = DISP_VER_RES / 2;
-    const int16_t barWidth = (DISP_HOR_RES * 80) / 100; // 80% da largura da tela
+    const int16_t barWidth = (DISP_HOR_RES * 80) / 100;
     const int16_t barHeight = 12;
-    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;  // Centralizado
-    const int16_t barY = cy + 15;                        // Posição vertical proporcional
+    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;
+    const int16_t barY = cy + 15;
 
-    // Scan tanto /local/apps/ quanto /sd/apps/
     const char* appDirs[] = { "/local/apps/", "/sd/apps/" };
     
     for (int d = 0; d < 2; d++) {
@@ -39,25 +41,24 @@ void LauncherUI::scanLocalApps() {
         int count = FileSystem::listDirectory(appDirs[d], entries, 50);
         
         for (int i = 0; i < count && appCount < 50; i++) {
-            // Atualiza o preenchimento verde DENTRO do contorno desenhado na Boot
             if (count > 0) {
                 int fillWidth = map(i + 1, 0, count, 0, barWidth - 4);
                 tft.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4, TFT_GREEN);
             }
 
             if (entries[i].isDir) {
-                // Check if it's an app package (has app.json)
                 String appJsonPath = entries[i].path;
                 if (!appJsonPath.endsWith("/")) appJsonPath += "/";
                 appJsonPath += "app.json";
                 
                 if (FileSystem::exists(appJsonPath.c_str())) {
-                    // Read app name from app.json
                     String jsonContent = FileSystem::readTextFile(appJsonPath.c_str());
                     String name = FileSystem::parseJsonValue(jsonContent, "name");
+                    String category = FileSystem::parseJsonValue(jsonContent, "category");
                     
+                    if (category.length() == 0) category = "General"; // Categoria padrão
+
                     if (name.length() > 0) {
-                        // Check if this app is already in our list (avoid duplicates from SD + local)
                         bool duplicate = false;
                         for (int j = 0; j < appCount; j++) {
                             if (appNames[j] == name) { duplicate = true; break; }
@@ -66,15 +67,14 @@ void LauncherUI::scanLocalApps() {
                         
                         appPaths[appCount] = entries[i].path;
                         appNames[appCount] = name;
+                        appCategories[appCount] = category; // Armazena a categoria
                         appIsFolder[appCount] = true;
                         appCount++;
                     }
                 }
             } else {
-                // Legacy .js file support
                 String fname = entries[i].name;
                 if (fname.endsWith(".js")) {
-                    // Check if this legacy app is already in our list
                     bool duplicate = false;
                     for (int j = 0; j < appCount; j++) {
                         if (appNames[j] == fname) { duplicate = true; break; }
@@ -83,6 +83,7 @@ void LauncherUI::scanLocalApps() {
                     
                     appPaths[appCount] = entries[i].path;
                     appNames[appCount] = fname;
+                    appCategories[appCount] = "Legacy Scripts"; // Categoria para scripts isolados
                     appIsFolder[appCount] = false;
                     appCount++;
                 }
@@ -91,22 +92,55 @@ void LauncherUI::scanLocalApps() {
     }
 }
 
-// Auxiliar: Gera a lista sequencial de itens ignorando a paginação linear
 int LauncherUI::getLauncherItems(LauncherItem* items, int maxItems) {
     int count = 0;
 
-    // Seção System
-    if (count < maxItems) items[count++] = {"[ SYSTEM ]", true, -1, -1};
-    if (count < maxItems) items[count++] = {"App Store", false, 1, -1};
-    if (count < maxItems) items[count++] = {"App Installer", false, 2, -1};
-    if (count < maxItems) items[count++] = {"Settings", false, 3, -1};
-    if (count < maxItems) items[count++] = {"Help Center", false, 4, -1};
+    // NIVEL 1: Menu Principal (Se não houver categoria selecionada)
+    if (currentCategory.length() == 0) {
+        // Seção System
+        if (count < maxItems) items[count++] = {"[ SYSTEM ]", true, ITEM_HEADER, -1, -1, ""};
+        if (count < maxItems) items[count++] = {"App Store", false, ITEM_SYS, 1, -1, ""};
+        if (count < maxItems) items[count++] = {"App Installer", false, ITEM_SYS, 2, -1, ""};
+        if (count < maxItems) items[count++] = {"Settings", false, ITEM_SYS, 3, -1, ""};
+        if (count < maxItems) items[count++] = {"Help Center", false, ITEM_SYS, 4, -1, ""};
 
-    // Seção Apps
-    if (appCount > 0) {
-        if (count < maxItems) items[count++] = {"[ APPS ]", true, -1, -1};
+        // Seção de Categorias
+        if (appCount > 0) {
+            if (count < maxItems) items[count++] = {"[ CATEGORIES ]", true, ITEM_HEADER, -1, -1, ""};
+
+            // Agrupa e lista categorias únicas disponíveis
+            String uniqueCategories[20];
+            int categoryCount = 0;
+
+            for (int i = 0; i < appCount; i++) {
+                bool found = false;
+                for (int c = 0; c < categoryCount; c++) {
+                    if (uniqueCategories[c] == appCategories[i]) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && categoryCount < 20) {
+                    uniqueCategories[categoryCount++] = appCategories[i];
+                }
+            }
+
+            // Adiciona as pastas de categorias à lista
+            for (int c = 0; c < categoryCount && count < maxItems; c++) {
+                String catName = "> " + uniqueCategories[c];
+                items[count++] = {catName, false, ITEM_CATEGORY, -1, -1, uniqueCategories[c]};
+            }
+        }
+    } 
+    // NIVEL 2: Submenu da Categoria Selecionada
+    else {
+        if (count < maxItems) items[count++] = {"< Voltar", false, ITEM_BACK, -1, -1, ""};
+        if (count < maxItems) items[count++] = {"[ " + currentCategory + " ]", true, ITEM_HEADER, -1, -1, ""};
+
         for (int i = 0; i < appCount && count < maxItems; i++) {
-            items[count++] = {appNames[i], false, -1, i};
+            if (appCategories[i] == currentCategory) {
+                items[count++] = {appNames[i], false, ITEM_APP, -1, i, ""};
+            }
         }
     }
 
@@ -285,7 +319,6 @@ void LauncherUI::drawTall() {
     // Renderiza Ícones de Status no canto superior direito do cabeçalho
     drawHeaderIcons(170, 15);
 
-    LauncherItem items[100];
     int totalItems = getLauncherItems(items, 100);
 
     int itemsPerPage = 6;
@@ -339,7 +372,6 @@ void LauncherUI::drawCompact() {
     // Desenha ícones no lado direito do cabeçalho
     drawHeaderIcons(175, 5);
 
-    LauncherItem items[100];
     int totalItems = getLauncherItems(items, 100);
 
     int cols = 2;
@@ -435,123 +467,159 @@ static void runApp(const String& path, bool isFolder) {
     tft.drawString("X", 220, 15, 2);
 }
 
-// Executa a opção selecionada no momento
+// Preenche o buffer interno de itens
+void LauncherUI::refreshItems() {
+    totalItems = getLauncherItems(items, 50);
+}
+
 void LauncherUI::executeSelectedItem() {
     extern int currentState;
-    
-    Serial.printf("[UI] Executando item selecionado ID: %d\n", selectedIndex);
+    refreshItems();
 
-    if (selectedIndex == 0 || selectedIndex == 1) {
-        currentState = 13; // STATE_APP_STORE
-    } else if (selectedIndex == 2) {
-        currentState = 3;  // STATE_INSTALLER
-    } else if (selectedIndex == 3) {
-        currentState = 1;  // STATE_SETTINGS
-    } else if (selectedIndex == 4) {
-        currentState = 14; // STATE_HELP_CENTER
-    } else if (selectedIndex > 5) {
-        int appIndex = selectedIndex - 6;
-        if (appIndex >= 0 && appIndex < appCount) {
-            runApp(appPaths[appIndex], appIsFolder[appIndex]);
-        }
+    if (selectedIndex < 0 || selectedIndex >= totalItems) return;
+
+    LauncherItem item = items[selectedIndex];
+
+    switch (item.type) {
+        case ITEM_HEADER:
+            break;
+
+        case ITEM_BACK:
+            currentCategory = "";
+            selectedIndex = 0;
+            scrollOffset = 0;
+            draw();
+            break;
+
+        case ITEM_CATEGORY:
+            currentCategory = item.categoryTarget;
+            selectedIndex = 0;
+            scrollOffset = 0;
+            draw();
+            break;
+
+        case ITEM_SYS:
+            if (item.sysId == 1) currentState = 13;      // STATE_APP_STORE
+            else if (item.sysId == 2) currentState = 3;  // STATE_INSTALLER
+            else if (item.sysId == 3) currentState = 1;  // STATE_SETTINGS
+            else if (item.sysId == 4) currentState = 14; // STATE_HELP_CENTER
+            break;
+
+        case ITEM_APP:
+            if (item.appIndex >= 0 && item.appIndex < appCount) {
+                runApp(appPaths[item.appIndex], appIsFolder[item.appIndex]);
+            }
+            break;
     }
 }
 
-// Navega para CIMA na lista
 void LauncherUI::navigateUp() {
-    if (selectedIndex > 0) {
-        selectedIndex--;
-        if (selectedIndex == 5) selectedIndex--; // Pula o header de Apps (Item 5)
-        
-        if (selectedIndex < scrollOffset) {
-            scrollOffset = selectedIndex;
-        }
-    } else {
-        // Se já está no topo, força a rolagem para o início
-        selectedIndex = 0;
-        scrollOffset = 0;
+    refreshItems();
+    if (totalItems == 0) return;
+
+    int targetIndex = selectedIndex - 1;
+
+    while (targetIndex >= 0 && items[targetIndex].isHeader) {
+        targetIndex--;
+    }
+
+    if (targetIndex >= 0) {
+        selectedIndex = targetIndex;
+    }
+
+    if (selectedIndex < scrollOffset) {
+        scrollOffset = selectedIndex;
     }
     
-    draw(); // Redesenha obrigatoriamente
+    draw();
 }
 
-// Navega para BAIXO na lista
-void LauncherUI::navigateDown(int totalItems) {
-    int maxVisible = 3; // No Cardputer (240x135) cabem cerca de 3 a 4 itens visíveis
+void LauncherUI::navigateDown() {
+    refreshItems();
+    int maxVisible = 3;
 
-    if (selectedIndex < totalItems - 1) {
-        selectedIndex++;
-        if (selectedIndex == 5) selectedIndex++; // Pula o header de Apps (Item 5)
-        
-        if (selectedIndex >= scrollOffset + maxVisible) {
-            scrollOffset = selectedIndex - (maxVisible - 1);
-        }
+    int targetIndex = selectedIndex + 1;
+
+    while (targetIndex < totalItems && items[targetIndex].isHeader) {
+        targetIndex++;
+    }
+
+    if (targetIndex < totalItems) {
+        selectedIndex = targetIndex;
+    }
+
+    if (selectedIndex >= scrollOffset + maxVisible) {
+        scrollOffset = selectedIndex - (maxVisible - 1);
     }
     
-    draw(); // Redesenha obrigatoriamente
+    draw();
 }
 
 void LauncherUI::handleKeyInput(BoardKey key) {
     extern int currentState;
-    int totalItems = appCount + 6;
 
     if (key == BOARD_KEY_UP) {
-        Serial.println("[UI] Mover CIMA");
         navigateUp();
     } 
     else if (key == BOARD_KEY_DOWN) {
-        Serial.println("[UI] Mover BAIXO");
-        navigateDown(totalItems);
+        navigateDown();
     } 
     else if (key == BOARD_KEY_ENTER) {
-        Serial.println("[UI] Executar Item");
         executeSelectedItem();
     } 
     else if (key == BOARD_KEY_ESC) {
-        Serial.println("[UI] Voltar para Installer");
-        currentState = 0;
+        if (currentCategory.length() > 0) {
+            currentCategory = "";
+            selectedIndex = 0;
+            scrollOffset = 0;
+            draw();
+        } else {
+            currentState = 0;
+        }
     }
 }
 
 void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
     extern int currentState;
-    int totalItems = appCount + 6;
+    refreshItems();
 
-    // 1. TOUCH NOS ITENS DA LISTA (y entre 45 e 270)
+    // 1. TOUCH NOS ITENS DA LISTA
     if (y >= 45 && y <= 270) {
         int clickedRelativeIndex = (y - 45) / 30;
         int clickedAbsoluteIndex = scrollOffset + clickedRelativeIndex;
 
-        // Evita clicar em headers desativados (0 e 5)
-        if (clickedAbsoluteIndex < totalItems && clickedAbsoluteIndex != 0 && clickedAbsoluteIndex != 5) {
+        if (clickedAbsoluteIndex < totalItems && !items[clickedAbsoluteIndex].isHeader) {
             selectedIndex = clickedAbsoluteIndex;
-            draw(); // Destaca o item selecionado na tela
-            
-            executeSelectedItem(); // REUTILIZADO: Executa a ação do item
+            draw();
+            executeSelectedItem();
         }
         return;
     }
 
-    // 2. TOUCH NOS BOTÕES DO RODAPÉ (y entre 285 e 315)
+    // 2. TOUCH NOS BOTÕES DO RODAPÉ
     if (y >= 285 && y <= 315) {
         if (x < 60) { 
-            // Botão UP
-            navigateUp(); // REUTILIZADO: Sobe na lista e redesenha
+            navigateUp();
         } 
         else if (x > 60 && x < 180) { 
-            // Botão SEL
-            executeSelectedItem(); // REUTILIZADO: Executa o item selecionado
+            executeSelectedItem();
         } 
         else if (x > 180) { 
-            // Botão DN
-            navigateDown(totalItems); // REUTILIZADO: Desce na lista e redesenha
+            navigateDown();
         }
         return;
     }
 
-    // 3. TOUCH NO HEADER (Toque rápido no topo abre o Installer)
+    // 3. TOUCH NO HEADER
     if (y < 40) {
-        currentState = 3; // STATE_INSTALLER
+        if (currentCategory.length() > 0) {
+            currentCategory = "";
+            selectedIndex = 0;
+            scrollOffset = 0;
+            draw();
+        } else {
+            currentState = 3;
+        }
         return;
     }
 }
