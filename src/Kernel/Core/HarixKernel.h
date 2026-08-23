@@ -3,6 +3,7 @@
 
 #include "../../Runtime/duktape.h"
 #include "boards/Board.h"
+#include <esp_heap_caps.h>
 
 // Inclusão dos headers do Lua envolvidos em extern "C" para compatibilidade C++
 extern "C" {

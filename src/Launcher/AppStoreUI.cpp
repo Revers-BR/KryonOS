@@ -29,7 +29,7 @@ int AppStoreUI::updateAppCount = 0;
 String AppStoreUI::dialogMessage = "";
 bool AppStoreUI::downloadInProgress = false;
 
-const char* INDEX_URL = "https://raw.githubusercontent.com/Haris16-code/KryonOS-AppStore/refs/heads/main/index.json";
+const char* INDEX_URL = "https://raw.githubusercontent.com/Revers-BR/KryonOS-AppStore/refs/heads/main/index.json";
 
 // ============================================================
 // Core Draw Router

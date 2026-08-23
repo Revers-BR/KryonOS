@@ -13,20 +13,81 @@ lua_State *HarixKernel::L = nullptr;
 
 duk_context *HarixKernel::ctx = nullptr;
 
-// 1. Alocador de memória compatível com o padrão lua_Alloc
+// Função auxiliar de alocação com fallback para a memória interna
+static void* psram_or_internal_malloc(size_t size) {
+    if (size == 0) return nullptr;
+    
+    void* p = nullptr;
+    if (psramFound()) {
+        p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!p) { // Se a PSRAM não existir ou estiver cheia, usa a RAM interna
+        p = malloc(size);
+    }
+    return p;
+}
+
+// Função auxiliar de realocação com fallback para a memória interna
+static void* psram_or_internal_realloc(void* ptr, size_t size) {
+    if (size == 0) {
+        free(ptr);
+        return nullptr;
+    }
+    if (!ptr) {
+        return psram_or_internal_malloc(size);
+    }
+
+    void* p = nullptr;
+    if (psramFound()) {
+        p = heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!p) { // Se a PSRAM falhar, tenta realocar na RAM interna
+        p = realloc(ptr, size);
+    }
+    return p;
+}
+
+// 1. Alocador Lua
 static void *my_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
     (void)ud;
     (void)osize;
     if (nsize == 0) {
         free(ptr);
         return nullptr;
-    } else {
-        void *p = realloc(ptr, nsize);
-        if (!p) {
-            Serial.println("out of memory (Lua alloc)");
-        }
-        return p;
     }
+    
+    void *p = psram_or_internal_realloc(ptr, nsize);
+    if (!p) {
+        Serial.println("[Lua] Out of memory!");
+    }
+    return p;
+}
+
+// 2. Alocador Duktape (malloc)
+static void *my_alloc(void *udata, duk_size_t size) {
+    (void)udata;
+    if (size == 0) return nullptr;
+
+    void *p = psram_or_internal_malloc(size);
+    if (!p) {
+        Serial.println("[Duktape] Out of memory!");
+    }
+    return p;
+}
+
+// 3. Alocador Duktape (realloc)
+static void *my_realloc(void *udata, void *ptr, duk_size_t size) {
+    (void)udata;
+    if (size == 0) {
+        free(ptr);
+        return nullptr;
+    }
+
+    void *p = psram_or_internal_realloc(ptr, size);
+    if (!p) {
+        Serial.println("[Duktape] Out of memory!");
+    }
+    return p;
 }
 
 // 2. Manipulador de pânico do Lua (equivalente ao my_fatal do Duktape)
@@ -127,29 +188,6 @@ void HarixKernel::checkLuaError(lua_State *L, int result) {
         }
     }
     lua_pop(L, 1); // Remove o resultado ou mensagem de erro da pilha do Lua
-}
-
-static void *my_alloc(void *udata, duk_size_t size) {
-    if (size == 0) return nullptr;
-    
-    void *p = malloc(size);
-    if (!p) {
-        Serial.println("out of memory");
-    }
-    return p;
-}
-
-static void *my_realloc(void *udata, void *ptr, duk_size_t size) {
-    if (size == 0) {
-        free(ptr);
-        return nullptr;
-    }
-    
-    void *p = realloc(ptr, size);
-    if (!p) {
-        Serial.println("out of memory");
-    }
-    return p;
 }
 
 static void my_free(void *udata, void *ptr) {

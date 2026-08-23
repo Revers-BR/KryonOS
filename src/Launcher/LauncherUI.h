@@ -24,6 +24,7 @@ public:
     static void executeSelectedItem();
     static void navigateUp();
     static void navigateDown(); // Removido parâmetro desnecessário
+    static void goBack();
     static void requestRescan();
     static void scanLocalApps();
     static bool needsRescan;
@@ -41,6 +42,7 @@ private:
     static int getLauncherItems(LauncherItem* items, int maxItems);
     
     static String currentCategory;
+    static int lastCategoryIndex;
     static String appCategories[50];
     static String appPaths[50];   // Path to app folder or .js file
     static String appNames[50];   // Display name (from app.json or filename)

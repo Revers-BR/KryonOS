@@ -5,16 +5,19 @@
 
 extern int currentState;
 
-LauncherItem LauncherUI::items[50]; 
 String LauncherUI::appPaths[50];
 String LauncherUI::appNames[50];
-String LauncherUI::appCategories[50];
 String LauncherUI::currentCategory;
-int LauncherUI::totalItems = 0;
-bool   LauncherUI::appIsFolder[50];
+LauncherItem LauncherUI::items[50]; 
+String LauncherUI::appCategories[50];
+
 int LauncherUI::appCount = 0;
-int LauncherUI::selectedIndex = 1;
+int LauncherUI::totalItems = 0;
 int LauncherUI::scrollOffset = 0;
+int LauncherUI::selectedIndex = 1;
+int LauncherUI::lastCategoryIndex = 0;
+
+bool LauncherUI::appIsFolder[50];
 bool LauncherUI::needsRescan = true;
 
 int launcherSubMenu = 0;
@@ -134,7 +137,6 @@ int LauncherUI::getLauncherItems(LauncherItem* items, int maxItems) {
     } 
     // NIVEL 2: Submenu da Categoria Selecionada
     else {
-        if (count < maxItems) items[count++] = {"< Voltar", false, ITEM_BACK, -1, -1, ""};
         if (count < maxItems) items[count++] = {"[ " + currentCategory + " ]", true, ITEM_HEADER, -1, -1, ""};
 
         for (int i = 0; i < appCount && count < maxItems; i++) {
@@ -304,6 +306,8 @@ void drawHeaderIcons(int16_t startX, int16_t y) {
 
 // Renderização para telas 240x320 (Layout em Grade Vertical)
 void LauncherUI::drawTall() {
+    refreshItems();
+
     // Moldura principal
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     
@@ -311,15 +315,11 @@ void LauncherUI::drawTall() {
     tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
     tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
     
-    // Texto do Título alinhado à esquerda para dar espaço aos ícones
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setTextDatum(TL_DATUM); // Top Left
+    tft.setTextDatum(TL_DATUM);
     tft.drawString("KryonOS", 14, 14, 2);
 
-    // Renderiza Ícones de Status no canto superior direito do cabeçalho
     drawHeaderIcons(170, 15);
-
-    int totalItems = getLauncherItems(items, 100);
 
     int itemsPerPage = 6;
     int startY = 42;
@@ -353,30 +353,50 @@ void LauncherUI::drawTall() {
         }
     }
 
-    // Touch Footer
-    tft.drawRoundRect(5, 285, 230, 26, 4, TFT_WHITE);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    // --- RODAPÉ PROPORCIONAL (4 BOTÕES IGUAIS) ---
+    int footerX = 5;
+    int footerY = 285;
+    int footerW = 230;
+    int footerH = 26;
+
+    tft.drawRoundRect(footerX, footerY, footerW, footerH, 4, TFT_WHITE);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("UP   |   SEL   |   DN", 120, 298, 2);
+
+    const char* labels[4] = {"UP", "SEL", "DN", "BACK"};
+
+    for (int i = 0; i < 4; i++) {
+        int x1 = footerX + (i * footerW) / 4;
+        int x2 = footerX + ((i + 1) * footerW) / 4;
+        int centerX = x1 + (x2 - x1) / 2;
+
+        // Renderiza o texto centralizado na sua respectiva fatia
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString(labels[i], centerX, footerY + (footerH / 2), 2);
+
+        // Desenha as linhas divisórias entre os botões
+        if (i < 3) {
+            tft.drawFastVLine(x2, footerY, footerH, TFT_DARKGREY);
+        }
+    }
 }
 
 void LauncherUI::drawCompact() {
+    refreshItems(); // Atualiza totalItems usando o buffer global da classe
+
     // Header Minimalista
     tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
     
-    // Título ajustado à esquerda para caber os ícones
+    // Título
     tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
-    tft.setTextDatum(TL_DATUM); // Top Left
+    tft.setTextDatum(TL_DATUM);
     tft.drawString("KryonOS", 6, 4, 2);
 
-    // Desenha ícones no lado direito do cabeçalho
+    // Ícones de status
     drawHeaderIcons(175, 5);
-
-    int totalItems = getLauncherItems(items, 100);
 
     int cols = 2;
     int rows = 2;
-    int itemsPerPage = cols * rows; // 4 itens visíveis por página
+    int itemsPerPage = cols * rows;
     int cardW = 112;
     int cardH = 34;
     int startY = 24;
@@ -409,7 +429,6 @@ void LauncherUI::drawCompact() {
             tft.setTextColor(textCol, bg);
             tft.setTextDatum(MC_DATUM);
             
-            // Trunca nome do app se for muito grande
             String displayName = item.label;
             if (displayName.length() > 12) {
                 displayName = displayName.substring(0, 10) + "..";
@@ -418,12 +437,12 @@ void LauncherUI::drawCompact() {
         }
     }
 
-    // Rodapé minimalista com indicação de navegação
+    // Rodapé minimalista com instrução de retorno (ESC/Back)
     tft.fillRoundRect(5, 104, 230, 26, 4, TFT_NAVY);
     tft.drawRoundRect(5, 104, 230, 26, 4, TFT_WHITE);
     tft.setTextColor(TFT_WHITE, TFT_NAVY);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString("Use Arrows / Enter to Open", 120, 117, 2);
+    tft.drawString("Arrows/Enter | ESC: Back", 120, 117, 2);
 }
 
 static void runApp(const String& path, bool isFolder) {
@@ -472,6 +491,30 @@ void LauncherUI::refreshItems() {
     totalItems = getLauncherItems(items, 50);
 }
 
+void LauncherUI::goBack() {
+    if (currentCategory.length() > 0) {
+        // Sai da categoria e retorna ao menu raiz
+        currentCategory = "";
+        refreshItems();
+
+        // Restaura a seleção para a categoria onde o usuário clicou
+        selectedIndex = lastCategoryIndex;
+        if (selectedIndex >= totalItems) selectedIndex = 0;
+
+        // Ajusta o scroll para manter o item restaurado visível
+        int maxVisible = 3;
+        if (selectedIndex >= scrollOffset + maxVisible || selectedIndex < scrollOffset) {
+            scrollOffset = (selectedIndex >= maxVisible) ? (selectedIndex - maxVisible + 1) : 0;
+        }
+
+        draw();
+    } else {
+        // Se já está na raiz, sai do Launcher
+        extern int currentState;
+        currentState = 0;
+    }
+}
+
 void LauncherUI::executeSelectedItem() {
     extern int currentState;
     refreshItems();
@@ -484,14 +527,9 @@ void LauncherUI::executeSelectedItem() {
         case ITEM_HEADER:
             break;
 
-        case ITEM_BACK:
-            currentCategory = "";
-            selectedIndex = 0;
-            scrollOffset = 0;
-            draw();
-            break;
-
         case ITEM_CATEGORY:
+            // Salva a posição atual antes de entrar na categoria
+            lastCategoryIndex = selectedIndex; 
             currentCategory = item.categoryTarget;
             selectedIndex = 0;
             scrollOffset = 0;
@@ -499,16 +537,19 @@ void LauncherUI::executeSelectedItem() {
             break;
 
         case ITEM_SYS:
-            if (item.sysId == 1) currentState = 13;      // STATE_APP_STORE
-            else if (item.sysId == 2) currentState = 3;  // STATE_INSTALLER
-            else if (item.sysId == 3) currentState = 1;  // STATE_SETTINGS
-            else if (item.sysId == 4) currentState = 14; // STATE_HELP_CENTER
+            if (item.sysId == 1) currentState = 13;
+            else if (item.sysId == 2) currentState = 3;
+            else if (item.sysId == 3) currentState = 1;
+            else if (item.sysId == 4) currentState = 14;
             break;
 
         case ITEM_APP:
             if (item.appIndex >= 0 && item.appIndex < appCount) {
                 runApp(appPaths[item.appIndex], appIsFolder[item.appIndex]);
             }
+            break;
+            
+        default:
             break;
     }
 }
@@ -556,8 +597,6 @@ void LauncherUI::navigateDown() {
 }
 
 void LauncherUI::handleKeyInput(BoardKey key) {
-    extern int currentState;
-
     if (key == BOARD_KEY_UP) {
         navigateUp();
     } 
@@ -568,19 +607,11 @@ void LauncherUI::handleKeyInput(BoardKey key) {
         executeSelectedItem();
     } 
     else if (key == BOARD_KEY_ESC) {
-        if (currentCategory.length() > 0) {
-            currentCategory = "";
-            selectedIndex = 0;
-            scrollOffset = 0;
-            draw();
-        } else {
-            currentState = 0;
-        }
+        goBack(); // Usa a lógica unificada de retorno
     }
 }
 
 void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
-    extern int currentState;
     refreshItems();
 
     // 1. TOUCH NOS ITENS DA LISTA
@@ -596,30 +627,32 @@ void LauncherUI::handleTouch(uint16_t x, uint16_t y) {
         return;
     }
 
-    // 2. TOUCH NOS BOTÕES DO RODAPÉ
+    // 2. TOUCH NOS BOTÕES DO RODAPÉ (Calcula a fatia proporcional baseada no X)
     if (y >= 285 && y <= 315) {
-        if (x < 60) { 
-            navigateUp();
-        } 
-        else if (x > 60 && x < 180) { 
-            executeSelectedItem();
-        } 
-        else if (x > 180) { 
-            navigateDown();
+        uint16_t screenWidth = tft.width(); // Largura total do display
+        int btnIndex = x / (screenWidth / 4);
+
+        switch (btnIndex) {
+            case 0:
+                navigateUp();
+                break;
+            case 1:
+                executeSelectedItem();
+                break;
+            case 2:
+                navigateDown();
+                break;
+            case 3:
+            default:
+                goBack();
+                break;
         }
         return;
     }
 
     // 3. TOUCH NO HEADER
     if (y < 40) {
-        if (currentCategory.length() > 0) {
-            currentCategory = "";
-            selectedIndex = 0;
-            scrollOffset = 0;
-            draw();
-        } else {
-            currentState = 3;
-        }
+        goBack();
         return;
     }
 }
