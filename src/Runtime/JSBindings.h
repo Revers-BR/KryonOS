@@ -11,13 +11,13 @@ public:
 
 private:
     static TFT_eSprite *tftSprite;
+    static bool useSprite;
 
     // Double Buffering
     static duk_ret_t js_createSprite(duk_context *ctx);
     static duk_ret_t js_deleteSprite(duk_context *ctx);
     static duk_ret_t js_pushSprite(duk_context *ctx);
     static duk_ret_t js_bindSprite(duk_context *ctx);
-    static bool useSprite;
 
     // GPIO Bindings
     static duk_ret_t js_pinMode(duk_context *ctx);

@@ -402,17 +402,33 @@ static void runApp(const String& path, bool isFolder) {
     tft.setTextDatum(TL_DATUM);
     
     String filePath;
+    bool isLua = false;
+
     if (isFolder) {
         filePath = path;
         if (!filePath.endsWith("/")) filePath += "/";
-        filePath += "main.js";
+        
+        // Prioridade: Se houver main.lua, roda Lua; senão, roda main.js (mantém JS compatível)
+        if (FileSystem::exists((filePath + "main.lua").c_str())) {
+            filePath += "main.lua";
+            isLua = true;
+        } else {
+            filePath += "main.js";
+            isLua = false;
+        }
     } else {
         filePath = path;
+        isLua = filePath.endsWith(".lua");
     }
     
-    HarixKernel::runFile(filePath.c_str());
+    // Executa na engine correspondente
+    if (isLua) {
+        HarixKernel::runLuaFile(filePath.c_str()); // Função que gerencia o estado do Lua
+    } else {
+        HarixKernel::runFile(filePath.c_str());    // Mantém o Duktape original intacto
+    }
     
-    // Draw exit button
+    // Desenha botão de saída padrão
     tft.fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
     tft.setTextColor(TFT_WHITE, TFT_RED);
     tft.setTextDatum(MC_DATUM);

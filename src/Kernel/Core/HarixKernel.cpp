@@ -1,8 +1,133 @@
 #include "HarixKernel.h"
 #include "../../Runtime/JSBindings.h"
+#include "../../Runtime/LuaBindings.h"
 #include "../../File System/FileSystem.h"
 
+extern "C" {
+    #include "lua.h"
+    #include "lauxlib.h"
+    #include "lualib.h"
+}
+
+lua_State *HarixKernel::L = nullptr;
+
 duk_context *HarixKernel::ctx = nullptr;
+
+// 1. Alocador de memória compatível com o padrão lua_Alloc
+static void *my_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
+    (void)ud;
+    (void)osize;
+    if (nsize == 0) {
+        free(ptr);
+        return nullptr;
+    } else {
+        void *p = realloc(ptr, nsize);
+        if (!p) {
+            Serial.println("out of memory (Lua alloc)");
+        }
+        return p;
+    }
+}
+
+// 2. Manipulador de pânico do Lua (equivalente ao my_fatal do Duktape)
+static int my_lua_panic(lua_State *L) {
+    const char *msg = lua_tostring(L, -1);
+    Serial.print("Lua fatal panic: ");
+    Serial.println(msg ? msg : "no message");
+
+    tft.fillScreen(TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("Out Of Ram Error", 10, 20, 4);
+    tft.drawString("Please turn off WiFi in", 10, 60, 2);
+    tft.drawString("setting to free the ram", 10, 80, 2);
+    tft.drawString("and make this app running", 10, 100, 2);
+    
+    // Desenha o botão 'X' para fechar/reiniciar
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_RED, TFT_WHITE);
+    tft.drawString("X", 215, 8, 2);
+    
+    uint16_t tx, ty;
+    while(true) {
+        if (getTouch(&tx, &ty)) {
+            if (tx >= 200 && ty <= 40) break;
+        }
+        delay(50);
+    }
+    
+    ESP.restart(); // Reinicia o ESP32 ao fechar
+    return 0;
+}
+
+// 3. Verificador de erros do Lua com suporte a tela TFT e Touch/Teclado
+void HarixKernel::checkLuaError(lua_State *L, int result) {
+    if (result != LUA_OK) {
+        const char *msg = lua_tostring(L, -1);
+        String errorMsg = msg ? msg : "Unknown Lua error";
+        
+        // Intercepta sinal oculto de saída do OS ("OS_EXIT")
+        if (errorMsg.indexOf("OS_EXIT") != -1) {
+            lua_pop(L, 1); // Remove o erro da pilha
+            return;        // Sai limpo sem exibir tela vermelha
+        }
+        
+        // Intercepta sinais de Out Of Memory (OOM)
+        if (errorMsg.indexOf("alloc") != -1 || errorMsg.indexOf("out of memory") != -1) {
+            tft.fillScreen(TFT_RED);
+            tft.setTextColor(TFT_WHITE, TFT_RED);
+            tft.drawString("Out Of Ram Error", 10, 20, 4);
+            tft.drawString("Please turn off WiFi in", 10, 60, 2);
+            tft.drawString("setting to free the ram", 10, 80, 2);
+            tft.drawString("and make this app running", 10, 100, 2);
+            
+            tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+            tft.setTextColor(TFT_RED, TFT_WHITE);
+            tft.drawString("X", 215, 8, 2);
+            
+            uint16_t tx, ty;
+            while(true) {
+                if (getTouch(&tx, &ty)) {
+                    if (tx >= 200 && ty <= 40) break;
+                }
+                BoardKey key = getKeyInput();
+                if (key != BOARD_KEY_NONE) break;
+                delay(50);
+            }
+            lua_pop(L, 1);
+            return;
+        }
+        
+        Serial.print("Lua Execution Error: ");
+        Serial.println(errorMsg);
+        
+        tft.fillScreen(TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.setTextDatum(TL_DATUM);
+        tft.drawString("LUA EXCEPTION!", 10, 10, 4);
+        
+        // Configuração de quebra de linha automática
+        tft.setTextWrap(true, true);
+        tft.setTextFont(2);
+        tft.setCursor(10, 45);
+        tft.print(errorMsg);
+        
+        // Botão 'X' para fechar
+        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+        tft.setTextColor(TFT_RED, TFT_WHITE);
+        tft.drawString("X", 215, 8, 2);
+        
+        uint16_t tx, ty;
+        while(true) {
+            if (getTouch(&tx, &ty)) {
+                if (tx >= 200 && ty <= 40) break;
+            }
+            BoardKey key = getKeyInput();
+            if (key != BOARD_KEY_NONE) break;
+            delay(50);
+        }
+    }
+    lua_pop(L, 1); // Remove o resultado ou mensagem de erro da pilha do Lua
+}
 
 static void *my_alloc(void *udata, duk_size_t size) {
     if (size == 0) return nullptr;
@@ -286,6 +411,74 @@ void HarixKernel::runFile(const char* filePath) {
     ctx = nullptr;
 }
 
-void HarixKernel::loop() {
+void HarixKernel::runLuaFile(const char* filePath) {
+    if (L) {
+        lua_close(L);
+        L = nullptr;
+    }
+
+    // Cria o novo estado do Lua usando o alocador customizado
+    L = lua_newstate(my_lua_alloc, nullptr);
+    if (!L) {
+        Serial.println("Failed to create Lua state for app.");
+        tft.fillScreen(TFT_RED);
+        tft.setTextColor(TFT_WHITE, TFT_RED);
+        tft.drawString("Out Of Ram Error", 10, 20, 4);
+        tft.drawString("Please turn off WiFi in", 10, 60, 2);
+        tft.drawString("setting to free the ram", 10, 80, 2);
+        tft.drawString("and make this app running", 10, 100, 2);
+        
+        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+        tft.setTextColor(TFT_RED, TFT_WHITE);
+        tft.drawString("X", 215, 8, 2);
+        
+        uint16_t tx, ty;
+        while(true) {
+            if (getTouch(&tx, &ty)) {
+                if (tx >= 200 && ty <= 40) break;
+            }
+            BoardKey key = getKeyInput();
+            if (key == BOARD_KEY_ESC) {
+                break;
+            }
+            delay(50);
+        }
+        return; // Retorna suavemente para o OS
+    }
+
+    luaL_openlibs(L);
+
+    // Configura o manipulador de pânico
+    lua_atpanic(L, my_lua_panic);
+
+    // Inicializa os Bindings do Hardware / Sistema
+    LuaBindings::init(L);
     
+    {
+        String content = FileSystem::readTextFile(filePath);
+        if (content.length() == 0) {
+            Serial.print("Failed to read Lua file: ");
+            Serial.println(filePath);
+            lua_close(L);
+            L = nullptr;
+            return;
+        }
+
+        // Carrega o código do buffer associando o nome do arquivo (ótimo para stacktraces)
+        int rc = luaL_loadbuffer(L, content.c_str(), content.length(), filePath);
+        if (rc != LUA_OK) {
+            checkLuaError(L, rc);
+            lua_close(L);
+            L = nullptr;
+            return;
+        }
+    } // A string `content` sai de escopo e libera a RAM aqui antes do script rodar
+
+    // Executa o chunk carregado
+    int rc = lua_pcall(L, 0, LUA_MULTRET, 0);
+    checkLuaError(L, rc);
+    
+    // Destrói o estado após o app fechar para liberar toda a RAM
+    lua_close(L);
+    L = nullptr;
 }
