@@ -31,77 +31,105 @@ bool AppStoreUI::downloadInProgress = false;
 
 const char* INDEX_URL = "https://raw.githubusercontent.com/Revers-BR/KryonOS-AppStore/refs/heads/main/index.json";
 
-// ============================================================
-// Core Draw Router
-// ============================================================
-void AppStoreUI::draw() {
-    
-    
-    if (storeState == 0) {
-        if (categoryCount == 0) {
-            bool success = fetchCategories();
-            if (!success) {
-                storeState = 4;
-                drawDialog();
-                return;
-            }
-        }
-        drawCategories();
-    } else if (storeState == 1) {
-        drawAppList();
-    } else if (storeState == 2) {
-        drawAppInfo();
-    } else if (storeState == 3 || storeState == 4) {
-        drawDialog();
-    }
-}
+bool AppStoreUI::isCompactMode() { return tft.height() < 240; }
 
 // ============================================================
 // Network Fetching
 // ============================================================
 bool AppStoreUI::downloadFile(const String& url, const String& destPath, const String& loadingMsg) {
+    Serial.println("\n[AppStore] --- Iniciando processo de download ---");
     if (WiFi.status() != WL_CONNECTED) {
         dialogMessage = "Please turn on WiFi first\nto access the app store.";
         return false;
     }
 
     HTTPClient http;
-    // Permite seguir redirecionamentos (301/302) comuns em CDNs e GitHub
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(10000); // Timeout da conexão HTTP inicial (10s)
+    http.setTimeout(10000);
     http.begin(url);
+
+    // Dimensões dinâmicas baseadas na tela atual
+    int screenW = tft.width();
+    int screenH = tft.height();
+
+    int centerX = screenW / 2;
+    int msgY = (screenH / 2) - 15;        // Posiciona a mensagem um pouco acima do centro
+
+    int barWidth = screenW - 60;          // Ex: 180px em tela de 240px de largura
+    int barHeight = 20;
+    int barX = (screenW - barWidth) / 2;  // Centraliza a barra horizontalmente (30px)
+    int barY = (screenH / 2) + 10;        // Posiciona a barra um pouco abaixo do centro
 
     // Redesenha UI
     tft.fillScreen(TFT_BLACK);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString(loadingMsg, 120, 140, 2);
-    tft.drawRect(30, 160, 180, 20, TFT_WHITE);
+    tft.drawString(loadingMsg, centerX, msgY, 2);
+    tft.drawRect(barX, barY, barWidth, barHeight, TFT_WHITE);;
 
     int httpCode = http.GET();
+    
     if (httpCode != HTTP_CODE_OK) {
+        Serial.printf("[AppStore] ERRO: Falha na requisição HTTP (%d)\n", httpCode);
         dialogMessage = "Error HTTP " + String(httpCode);
         http.end();
         return false;
     }
 
     int totalLen = http.getSize();
+    int remainingLen = totalLen;
     int downloaded = 0;
-
+    
     WiFiClient *stream = http.getStreamPtr();
+    if (!stream) {
+        dialogMessage = "Error: Invalid Stream!";
+        http.end();
+        return false;
+    }
+
     fs::FS* targetFS = &LittleFS;
     String relPath = destPath;
 
     if (destPath.startsWith("/sd/")) {
         targetFS = initSD();
-        relPath = destPath.substring(3);
+        relPath = destPath.substring(4);
     } else if (destPath.startsWith("/local/")) {
         targetFS = &LittleFS;
-        relPath = destPath.substring(6);
+        relPath = destPath.substring(7);
     }
 
-    File file = targetFS->open(relPath, "w");
-    if (!file) {
+    if (relPath.startsWith("/")) {
+        relPath = relPath.substring(1);
+    }
+
+    // --- VERIFICAÇÃO DE ESPAÇO LIVRE ---
+    if (targetFS == &LittleFS) {
+        size_t totalBytes = LittleFS.totalBytes();
+        size_t usedBytes = LittleFS.usedBytes();
+        size_t freeBytes = totalBytes - usedBytes;
+
+        Serial.printf("[AppStore] LittleFS -> Total: %u | Usado: %u | Livre: %u bytes\n", totalBytes, usedBytes, freeBytes);
+
+        if (totalLen > 0 && (size_t)totalLen > freeBytes) {
+            dialogMessage = "Error: Storage Full!";
+            http.end();
+            return false;
+        }
+    }
+
+    // --- GARANTE QUE O DIRETÓRIO PAI EXISTE ---
+    int lastSlash = relPath.lastIndexOf('/');
+    if (lastSlash != -1) {
+        String dirPath = "/" + relPath.substring(0, lastSlash);
+        if (!targetFS->exists(dirPath)) {
+            targetFS->mkdir(dirPath);
+        }
+    }
+
+    String finalPath = "/" + relPath;
+    
+    File file = targetFS->open(finalPath, "w");
+    if (!file || file.isDirectory()) {
         dialogMessage = "Error: FS Write Failed!";
         http.end();
         return false;
@@ -109,35 +137,44 @@ bool AppStoreUI::downloadFile(const String& url, const String& destPath, const S
 
     uint8_t buff[512];
     unsigned long lastDataTime = millis();
-    const unsigned long STREAM_TIMEOUT_MS = 5000; // 5 segundos de silêncio cancelam o download
+    const unsigned long STREAM_TIMEOUT_MS = 5000;
 
-    while (http.connected() && (totalLen == -1 || downloaded < totalLen)) {
+    while (http.connected() && (remainingLen > 0 || totalLen == -1)) {
         size_t size = stream->available();
 
         if (size > 0) {
             int readSize = (size > sizeof(buff)) ? sizeof(buff) : size;
-            int readLen = stream->readBytes(buff, readSize);
+            int readLen = stream->read(buff, readSize);
 
             if (readLen > 0) {
                 size_t written = file.write(buff, readLen);
                 if (written != (size_t)readLen) {
-                    dialogMessage = "Error: Storage Full/Write Error!";
+                    dialogMessage = "Error: Storage Full!";
                     file.close();
                     http.end();
                     return false;
                 }
 
                 downloaded += readLen;
-                lastDataTime = millis(); // Reinicia temporizador de atividade
+                if (remainingLen > 0) {
+                    remainingLen -= readLen;
+                }
+                lastDataTime = millis();
 
-                // Atualiza barra de progresso
                 if (totalLen > 0) {
-                    int progressWidth = map(downloaded, 0, totalLen, 0, 176);
-                    tft.fillRect(32, 162, progressWidth, 16, TFT_GREEN);
+                    int maxFillWidth = barWidth - 4; // Margem interna de 2px de cada lado
+                    int progressWidth = map(downloaded, 0, totalLen, 0, maxFillWidth);
+                    if (progressWidth > maxFillWidth) progressWidth = maxFillWidth;
+
+                    // Desenha o preenchimento mantendo o alinhamento correto da barra
+                    tft.fillRect(barX + 2, barY + 2, progressWidth, barHeight - 4, TFT_GREEN);
                 }
             }
         } else {
-            // Se ficar sem receber dados por mais de 5s, interrompe
+            if (!stream->connected()) {
+                break;
+            }
+
             if (millis() - lastDataTime > STREAM_TIMEOUT_MS) {
                 dialogMessage = "Error: Download Timeout!";
                 file.close();
@@ -148,15 +185,18 @@ bool AppStoreUI::downloadFile(const String& url, const String& destPath, const S
         }
     }
 
+    // Fechar o arquivo grava o restante do buffer de forma segura
     file.close();
     http.end();
 
-    // Valida se o download baixou a totalidade dos dados declarados
+    Serial.printf("[AppStore] Download concluído! Total: %d bytes.\n", downloaded);
+
     if (totalLen > 0 && downloaded < totalLen) {
         dialogMessage = "Error: Incomplete Download!";
         return false;
     }
 
+    Serial.println("[AppStore] --- Operação finalizada com Sucesso ---\n");
     return true;
 }
 
@@ -291,8 +331,17 @@ bool AppStoreUI::checkUpdates() {
         return false;
     }
     
+    fs::FS* targetFS;
+    fs::FS* sdCard = initSD();
+    
     for (int i=0; i<2; i++) {
-        fs::FS* targetFS = (i == 0) ? (fs::FS*)initSD() : (fs::FS*)&LittleFS;
+
+        if(i == 0){
+            if(sdCard == nullptr) continue;
+            else targetFS = sdCard;
+        }
+        else targetFS = &LittleFS;
+
         if (!targetFS->exists("/apps")) continue;
         
         File root = targetFS->open("/apps");
@@ -388,47 +437,73 @@ bool AppStoreUI::checkUpdates() {
     return true;
 }
 
+// Detecta se o arquivo do app deve ser main.lua ou main.js com base na URL
+String AppStoreUI::getScriptFilename(const String& url) {
+    String lower = url;
+    lower.toLowerCase();
+    if (lower.endsWith(".lua")) {
+        return "main.lua";
+    }
+    return "main.js"; // Padrão
+}
+
+// Limpa todos os possíveis arquivos de instalação temporária (meta e scripts)
+void AppStoreUI::cleanupTmpFolder(const String& destFolder) {
+    String jsonFile = destFolder + "/app.json";
+    String jsFile   = destFolder + "/main.js";
+    String luaFile  = destFolder + "/main.lua";
+
+    if (FileSystem::exists(jsonFile.c_str())) FileSystem::deleteFile(jsonFile.c_str());
+    if (FileSystem::exists(jsFile.c_str()))   FileSystem::deleteFile(jsFile.c_str());
+    if (FileSystem::exists(luaFile.c_str()))  FileSystem::deleteFile(luaFile.c_str());
+
+    if (FileSystem::exists(destFolder.c_str())) {
+        FileSystem::rmdir(destFolder.c_str());
+    }
+}
+
 void AppStoreUI::performInstall(int appIdx) {
     AppStoreItem& app = currentApps[appIdx];
     
-    // Removida a barra final do caminho do diretório
+    Serial.printf("[AppStore] Iniciando instalacao do app #%d: %s\n", appIdx, app.name.c_str());
+    
     String destFolder = "/local/tmp_download";
     String metaPath = destFolder + "/app.json";
-    String appPath = destFolder + "/main.js";
     
-    // Limpa o diretório antigo caso ele exista
-    if (FileSystem::exists(destFolder.c_str())) {
-        FileSystem::deleteFile(metaPath.c_str());
-        FileSystem::deleteFile(appPath.c_str());
-        FileSystem::rmdir(destFolder.c_str()); // Sem barra final no rmdir
-    }
+    // Identifica dinamicamente se será main.js ou main.lua
+    String scriptName = getScriptFilename(app.appUrl);
+    String appPath = destFolder + "/" + scriptName;
+    
+    cleanupTmpFolder(destFolder);
     
     // Cria o diretório (sem barra no final)
     if (!FileSystem::mkdir(destFolder.c_str())) {
-        return; // Falha na criação do diretório
+        return;
     }
-    
     bool metaOk = downloadFile(app.metaUrl, metaPath, "Downloading Meta...");
-    if (!metaOk) return;
-    
+    if (!metaOk) {
+        cleanupTmpFolder(destFolder);
+        return;
+    }
     bool appOk = downloadFile(app.appUrl, appPath, "Downloading App...");
     if (!appOk) {
-        // Limpeza em caso de falha
-        FileSystem::deleteFile(metaPath.c_str());
-        FileSystem::deleteFile(appPath.c_str());
-        FileSystem::rmdir(destFolder.c_str());
+        cleanupTmpFolder(destFolder);
         return;
     }
     
     InstallerUI::autoInstallPath = destFolder;
     currentState = 3; // STATE_INSTALLER
     storeState = 0;   // Reset AppStoreUI state
+
+    Serial.println("[AppStore] Instalacao preparada. Redirecionando para InstallerUI...");
 }
 
 // ============================================================
-// UI Draw Methods
+// UI Draw Methods (Compatível com 240x320 Touch e 240x135 Teclado/Botões)
 // ============================================================
-void AppStoreUI::drawCategories() {
+
+// --- DESENHO DE CATEGORIAS ---
+void AppStoreUI::drawCategoriesTall() {
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
     tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
@@ -466,20 +541,55 @@ void AppStoreUI::drawCategories() {
         }
     }
     
-    // Footer
-    tft.drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("BACK", 35, 300, 2);
-    tft.drawString("|", 70, 300, 2);
-    tft.drawString("UP", 100, 300, 2);
-    tft.drawString("|", 130, 300, 2);
-    tft.drawString("SEL", 165, 300, 2);
-    tft.drawString("|", 200, 300, 2);
-    tft.drawString("DN", 220, 300, 2);
+    // Rodapé Touch Proporcional
+    drawFooterButtons(5, 285, 230, 30);
 }
 
-void AppStoreUI::drawAppList() {
+void AppStoreUI::drawCategoriesCompact() {
+    // Header Minimalista
+    tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("App Store", 120, 11, 2);
+
+    tft.fillRect(5, 22, 230, 78, TFT_BLACK);
+
+    int yPos = 24;
+    int itemsPerPage = 4;
+    int totalItems = categoryCount;
+
+    if (totalItems == 0) {
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("No categories found.", 120, 60, 2);
+    } else {
+        for (int i = 0; i < itemsPerPage; i++) {
+            int listIndex = scrollOffset + i;
+            if (listIndex >= totalItems) break;
+
+            String name = categoryNames[listIndex];
+
+            if (listIndex == selectedIndex) {
+                tft.fillRect(5, yPos, 230, 22, TFT_WHITE);
+                tft.setTextColor(TFT_BLACK, TFT_WHITE);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("> " + name).c_str(), 10, yPos + 11, 2);
+            } else {
+                tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("  " + name).c_str(), 10, yPos + 11, 2);
+            }
+            yPos += 25;
+        }
+    }
+}
+
+void AppStoreUI::drawCategories() {
+    if (isCompactMode()) drawCategoriesCompact();
+    else drawCategoriesTall();
+}
+
+// --- DESENHO DA LISTA DE APPS ---
+void AppStoreUI::drawAppListTall() {
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     tft.fillRoundRect(6, 6, 228, 30, 5, TFT_BLACK);
     tft.drawRoundRect(6, 6, 228, 30, 5, TFT_GREEN);
@@ -517,20 +627,53 @@ void AppStoreUI::drawAppList() {
         }
     }
     
-    // Footer
-    tft.drawRoundRect(5, 285, 230, 30, 5, TFT_WHITE);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("BACK", 35, 300, 2);
-    tft.drawString("|", 70, 300, 2);
-    tft.drawString("UP", 100, 300, 2);
-    tft.drawString("|", 130, 300, 2);
-    tft.drawString("SEL", 165, 300, 2);
-    tft.drawString("|", 200, 300, 2);
-    tft.drawString("DN", 220, 300, 2);
+    drawFooterButtons(5, 285, 230, 30);
 }
 
-void AppStoreUI::drawAppInfo() {
+void AppStoreUI::drawAppListCompact() {
+    tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(currentCategoryName, 120, 11, 2);
+
+    tft.fillRect(5, 22, 230, 78, TFT_BLACK);
+
+    int yPos = 24;
+    int itemsPerPage = 4; // Ajustado de 3 para 4
+    int totalItems = currentAppCount;
+
+    if (totalItems == 0) {
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString("No apps found.", 120, 60, 2);
+    } else {
+        for (int i = 0; i < itemsPerPage; i++) {
+            int listIndex = scrollOffset + i;
+            if (listIndex >= totalItems) break;
+
+            String name = currentApps[listIndex].name;
+
+            if (listIndex == selectedIndex) {
+                tft.fillRect(5, yPos, 230, 22, TFT_WHITE);
+                tft.setTextColor(TFT_BLACK, TFT_WHITE);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("> " + name).c_str(), 10, yPos + 11, 2);
+            } else {
+                tft.setTextColor(TFT_WHITE, TFT_BLACK);
+                tft.setTextDatum(ML_DATUM);
+                tft.drawString(("  " + name).c_str(), 10, yPos + 11, 2);
+            }
+            yPos += 25;
+        }
+    }
+}
+
+void AppStoreUI::drawAppList() {
+    if (isCompactMode()) drawAppListCompact();
+    else drawAppListTall();
+}
+
+// --- DESENHO DE DETALHES DO APP ---
+void AppStoreUI::drawAppInfoTall() {
     tft.fillScreen(TFT_BLACK);
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     
@@ -597,7 +740,78 @@ void AppStoreUI::drawAppInfo() {
     tft.drawString("CANCEL", 175, 245, 2);
 }
 
-void AppStoreUI::drawDialog() {
+void AppStoreUI::drawAppInfoCompact() {
+    tft.fillScreen(TFT_BLACK);
+    
+    AppStoreItem& app = currentApps[selectedAppIndex];
+    
+    // Header Compacto
+    tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("App Details", 120, 11, 2);
+    
+    tft.setTextDatum(TL_DATUM);
+    
+    // Linha 1: Nome
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString((app.name).c_str(), 6, 23, 2);
+    
+    // Linha 2: Autor + Versão integrados
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    String meta = "By: " + app.author + " | v" + app.version;
+    tft.drawString(meta.c_str(), 6, 40, 1);
+    
+    // Linha 3: Descrição
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(isUpdateMode ? "What's New:" : "Desc:", 6, 54, 1);
+    
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    String desc = app.description;
+    int lineY = 66;
+    for (int l = 0; l < 2 && desc.length() > 0; l++) {
+        int splitIdx = 38;
+        if (desc.length() <= 38) splitIdx = desc.length();
+        else {
+            int spaceIdx = desc.lastIndexOf(' ', 38);
+            if (spaceIdx > 0) splitIdx = spaceIdx;
+        }
+        tft.drawString(desc.substring(0, splitIdx), 6, lineY, 1);
+        desc = desc.substring(splitIdx);
+        desc.trim();
+        lineY += 11;
+    }
+
+    // --- BOTÃO 1: DOWNLOAD / UPDATE (selectedIndex == 0) ---
+    if (selectedIndex == 0) {
+        tft.fillRoundRect(8, 104, 108, 26, 4, TFT_GREEN);
+        tft.setTextColor(TFT_BLACK, TFT_GREEN);
+    } else {
+        tft.drawRoundRect(8, 104, 108, 26, 4, TFT_GREEN);
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    }
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(isUpdateMode ? "UPDATE" : "DOWNLOAD", 62, 117, 2);
+
+    // --- BOTÃO 2: CANCEL (selectedIndex == 1) ---
+    if (selectedIndex == 1) {
+        tft.fillRoundRect(124, 104, 108, 26, 4, TFT_WHITE);
+        tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    } else {
+        tft.drawRoundRect(124, 104, 108, 26, 4, TFT_WHITE);
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("CANCEL", 178, 117, 2);
+}
+
+void AppStoreUI::drawAppInfo() {
+    if ( isCompactMode()) drawAppInfoCompact();
+    else drawAppInfoTall();
+}
+
+// --- DESENHO DE DIÁLOGOS ---
+void AppStoreUI::drawDialogTall() {
     tft.fillScreen(TFT_BLACK);
     tft.drawRoundRect(3, 3, 234, 314, 5, TFT_WHITE);
     
@@ -621,215 +835,269 @@ void AppStoreUI::drawDialog() {
     tft.drawString("OK", 120, 235, 2);
 }
 
+void AppStoreUI::drawDialogCompact() {
+    tft.fillScreen(TFT_BLACK);
+    
+    tft.fillRoundRect(2, 2, 236, 18, 3, TFT_DARKGREY);
+    tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString("Message", 120, 11, 2);
+    
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    int nlIdx = dialogMessage.indexOf('\n');
+    if (nlIdx > 0) {
+        tft.drawString(dialogMessage.substring(0, nlIdx), 120, 48, 2);
+        tft.drawString(dialogMessage.substring(nlIdx + 1), 120, 68, 2);
+    } else {
+        tft.drawString(dialogMessage, 120, 58, 2);
+    }
+    
+    tft.drawRoundRect(85, 102, 70, 26, 4, TFT_WHITE);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString("OK", 120, 115, 2);
+}
+
+void AppStoreUI::drawDialog() {
+    if ( isCompactMode()) drawDialogCompact();
+    else drawDialogTall();
+}
+
+// --- HELPER PARA DESENHO DO RODAPÉ (4 BOTÕES IGUAIS) ---
+void AppStoreUI::drawFooterButtons(int x, int y, int w, int h) {
+    tft.drawRoundRect(x, y, w, h, 4, TFT_WHITE);
+    tft.setTextDatum(MC_DATUM);
+
+    const char* labels[4] = {"BACK", "UP", "SEL", "DN"};
+
+    for (int i = 0; i < 4; i++) {
+        int x1 = x + (i * w) / 4;
+        int x2 = x + ((i + 1) * w) / 4;
+        int centerX = x1 + (x2 - x1) / 2;
+
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.drawString(labels[i], centerX, y + (h / 2), 2);
+
+        if (i < 3) {
+            tft.drawFastVLine(x2, y, h, TFT_DARKGREY);
+        }
+    }
+}
+
+// --- MÉTODOS DE CONTROLE PRINCIPAL ---
+void AppStoreUI::draw() {
+    tft.fillScreen(TFT_BLACK);
+
+    if (storeState == 0) {
+        if (categoryCount == 0) {
+            bool success = fetchCategories();
+            if (!success) {
+                storeState = 4;
+                drawDialog();
+                return;
+            }
+        }
+        drawCategories();
+    } else if (storeState == 1) {
+        drawAppList();
+    } else if (storeState == 2) {
+        drawAppInfo();
+    } else if (storeState == 3 || storeState == 4) {
+        drawDialog();
+    }
+}
+
 // ============================================================
 // Touch Handler
 // ============================================================
+
+void AppStoreUI::goBack() {
+    if (storeState == 1) { // App List -> Categoriass
+        storeState = 0;
+        selectedIndex = 0;
+        scrollOffset = 0;
+        draw();
+    } else if (storeState == 2) { // App Info -> App List
+        storeState = 1;
+        draw();
+    } else if (storeState == 0) { // Categories -> Launcher
+        extern int currentState;
+        currentState = 0;
+        categoryCount = 0; // Força recarregar da próxima vez
+    } else if (storeState == 3 || storeState == 4) { // Dialog
+        if (categoryCount == 0) {
+            extern int currentState;
+            currentState = 0;
+        } else {
+            storeState = 0;
+            draw();
+        }
+    }
+}
+
+void AppStoreUI::selectCategory(int index) {
+    if (index < 0 || index >= categoryCount) return;
+
+    selectedIndex = index;
+    currentCategoryName = categoryNames[index];
+    isUpdateMode = (categoryUrls[index] == "UPDATE_ACTION");
+
+    bool ok = fetchCategoryApps(categoryUrls[index]);
+    if (!ok) {
+        storeState = 4;
+        drawDialog();
+    } else {
+        storeState = 1;
+        selectedIndex = 0;
+        scrollOffset = 0;
+        draw();
+    }
+}
+
+void AppStoreUI::selectApp(int index) {
+    if (index < 0 || index >= currentAppCount) return;
+
+    selectedIndex = index;
+    selectedAppIndex = index;
+
+    String tmpPath = "/tmp_meta.json";
+    if (downloadFile(currentApps[selectedAppIndex].metaUrl, tmpPath, "Loading details...")) {
+        File file = LittleFS.open(tmpPath, "r");
+        if (file) {
+            JsonDocument doc;
+            if (!deserializeJson(doc, file)) {
+                int appApi = doc["api"] | 1;
+                if (appApi > KRYONOS_API_LEVEL) {
+                    file.close();
+                    LittleFS.remove(tmpPath);
+                    if (isUpdateMode) {
+                        dialogMessage = "API " + String(appApi) + " needed to update.\nPlease update OS first!";
+                    } else {
+                        dialogMessage = "This App Requires KryonOS API " + String(appApi) + "\nPlease update OS!";
+                    }
+                    storeState = 4;
+                    drawDialog();
+                    return;
+                }
+                currentApps[selectedAppIndex].name = doc["name"] | currentApps[selectedAppIndex].id;
+                currentApps[selectedAppIndex].description = doc["description"] | "No description.";
+                currentApps[selectedAppIndex].author = doc["author"] | "Unknown";
+                currentApps[selectedAppIndex].version = doc["version"] | "1.0.0";
+
+                isUpdateMode = false;
+                String pkgName = doc["packageName"] | currentApps[selectedAppIndex].id;
+                for (int fsIdx = 0; fsIdx < 2; fsIdx++) {
+                    String localPath = (fsIdx == 0 ? "/sd/apps/" : "/local/apps/") + pkgName + "/app.json";
+                    if (FileSystem::exists(localPath.c_str())) {
+                        String localJson = FileSystem::readTextFile(localPath.c_str());
+                        if (localJson.length() > 0) {
+                            String localVer = FileSystem::parseJsonValue(localJson, "version");
+                            if (compareVersions(currentApps[selectedAppIndex].version, localVer) > 0) {
+                                isUpdateMode = true;
+                            }
+                        }
+                    }
+                }
+
+                if (isUpdateMode) {
+                    String changelog = doc["changelog"] | "";
+                    if (changelog.length() > 0) {
+                        currentApps[selectedAppIndex].description = changelog;
+                    } else {
+                        currentApps[selectedAppIndex].description = "Update available!";
+                    }
+                }
+            }
+            file.close();
+            LittleFS.remove(tmpPath);
+        }
+    }
+
+    storeState = 2;
+    draw();
+}
+
+void AppStoreUI::navigateUp() {
+    if (storeState == 2) { // Alterna o foco dos botões na tela de detalhes
+        selectedIndex = (selectedIndex == 0) ? 1 : 0;
+        draw();
+        return;
+    }
+
+    if (selectedIndex > 0) {
+        selectedIndex--;
+        if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
+        draw();
+    }
+}
+
+void AppStoreUI::navigateDown() {
+    if (storeState == 2) { // Alterna o foco dos botões na tela de detalhes
+        selectedIndex = (selectedIndex == 0) ? 1 : 0;
+        draw();
+        return;
+    }
+
+    int total = (storeState == 0) ? categoryCount : currentAppCount;
+    int maxVisible = isCompactMode ? 4 : 7;
+
+    if (selectedIndex < total - 1) {
+        selectedIndex++;
+        if (selectedIndex >= scrollOffset + maxVisible) {
+            scrollOffset = selectedIndex - maxVisible + 1;
+        }
+        draw();
+    }
+}
+
+void AppStoreUI::executeSelectedItem() {
+    if (storeState == 0) {
+        selectCategory(selectedIndex);
+    } else if (storeState == 1) {
+        selectApp(selectedIndex);
+    } else if (storeState == 2) {
+        if (selectedIndex == 0) {
+            performInstall(selectedAppIndex); // Instalar / Atualizar
+            draw();
+        } else {
+            storeState = 1; // Cancelar -> Volta para a lista de apps
+            selectedIndex = selectedAppIndex; // Restaura o índice do app
+            draw();
+        }
+    }
+}
+
+void AppStoreUI::handleKeyInput(BoardKey key) {
+    if (key == BOARD_KEY_UP) {
+        navigateUp();
+    } 
+    else if (key == BOARD_KEY_DOWN) {
+        navigateDown();
+    } 
+    else if (key == BOARD_KEY_ENTER) {
+        executeSelectedItem();
+    } 
+    else if (key == BOARD_KEY_ESC) {
+        goBack(); // Usa a lógica unificada de retorno
+    }
+}
+
 void AppStoreUI::handleTouch(uint16_t x, uint16_t y) {
-    if (storeState == 0) { // Categories
-        if (y >= 45 && y <= 270) {
-            int clickedRelative = (y - 45) / 30;
-            int clickedAbs = scrollOffset + clickedRelative;
-            if (clickedAbs < categoryCount) {
-                selectedIndex = clickedAbs;
-                currentCategoryName = categoryNames[clickedAbs];
-                isUpdateMode = (categoryUrls[clickedAbs] == "UPDATE_ACTION");
-                
-                bool ok = fetchCategoryApps(categoryUrls[clickedAbs]);
-                if (!ok) {
-                    storeState = 4;
-                    drawDialog();
-                } else {
-                    storeState = 1;
-                    selectedIndex = 0;
-                    scrollOffset = 0;
-                    draw();
-                }
-            }
-            return;
+    // 1. TOUCH NO HEADER (Retorna de qualquer tela)
+    if (y < 40) {
+        goBack();
+        return;
+    }
+
+    // 2. TELA DE DIÁLOGO (storeState == 3 ou 4)
+    if (storeState == 3 || storeState == 4) {
+        if (x >= 85 && x <= 155 && y >= 220 && y <= 250) {
+            goBack();
         }
-        
-        if (y >= 285 && y <= 315) {
-            if (x < 70) { // BACK
-                currentState = 0;
-                categoryCount = 0; // force refetch next time
-            } else if (x >= 70 && x < 130) { // UP
-                if (selectedIndex > 0) {
-                    selectedIndex--;
-                    if (selectedIndex < scrollOffset) scrollOffset--;
-                    draw();
-                }
-            } else if (x >= 130 && x < 200) { // SEL
-                currentCategoryName = categoryNames[selectedIndex];
-                isUpdateMode = (categoryUrls[selectedIndex] == "UPDATE_ACTION");
-                
-                bool ok = fetchCategoryApps(categoryUrls[selectedIndex]);
-                if (!ok) {
-                    storeState = 4;
-                    drawDialog();
-                } else {
-                    storeState = 1;
-                    selectedIndex = 0;
-                    scrollOffset = 0;
-                    draw();
-                }
-            } else if (x >= 200) { // DN
-                if (selectedIndex < categoryCount - 1) {
-                    selectedIndex++;
-                    if (selectedIndex >= scrollOffset + 7) scrollOffset++;
-                    draw();
-                }
-            }
-        }
-    } else if (storeState == 1) { // App List
-        if (y >= 45 && y <= 270) {
-            int clickedRelative = (y - 45) / 30;
-            int clickedAbs = scrollOffset + clickedRelative;
-            if (clickedAbs < currentAppCount) {
-                selectedIndex = clickedAbs;
-                selectedAppIndex = clickedAbs;
-                
-                // Fetch Meta for details
-                String tmpPath = "/tmp_meta.json";
-                if (downloadFile(currentApps[selectedAppIndex].metaUrl, tmpPath, "Loading details...")) {
-                    File file = LittleFS.open(tmpPath, "r");
-                    if (file) {
-                        JsonDocument doc;
-                        if (!deserializeJson(doc, file)) {
-                            int appApi = doc["api"] | 1;
-                            if (appApi > KRYONOS_API_LEVEL) {
-                                file.close();
-                                LittleFS.remove(tmpPath);
-                                if (isUpdateMode) {
-                                    dialogMessage = "API " + String(appApi) + " needed to update.\nPlease update OS first!";
-                                } else {
-                                    dialogMessage = "This App Requires KryonOS API " + String(appApi) + "\nPlease update OS!";
-                                }
-                                storeState = 4;
-                                drawDialog();
-                                return;
-                            }
-                            currentApps[selectedAppIndex].name = doc["name"] | currentApps[selectedAppIndex].id;
-                            currentApps[selectedAppIndex].description = doc["description"] | "No description.";
-                            currentApps[selectedAppIndex].author = doc["author"] | "Unknown";
-                            currentApps[selectedAppIndex].version = doc["version"] | "1.0.0";
-                            
-                            // Check if installed and if this is an update
-                            isUpdateMode = false;
-                            String pkgName = doc["packageName"] | currentApps[selectedAppIndex].id;
-                            for (int fsIdx=0; fsIdx<2; fsIdx++) {
-                                String localPath = (fsIdx == 0 ? "/sd/apps/" : "/local/apps/") + pkgName + "/app.json";
-                                if (FileSystem::exists(localPath.c_str())) {
-                                    String localJson = FileSystem::readTextFile(localPath.c_str());
-                                    if (localJson.length() > 0) {
-                                        String localVer = FileSystem::parseJsonValue(localJson, "version");
-                                        if (compareVersions(currentApps[selectedAppIndex].version, localVer) > 0) {
-                                            isUpdateMode = true;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (isUpdateMode) {
-                                String changelog = doc["changelog"] | "";
-                                if (changelog.length() > 0) {
-                                    currentApps[selectedAppIndex].description = changelog;
-                                } else {
-                                    currentApps[selectedAppIndex].description = "Update available!";
-                                }
-                            }
-                        }
-                        file.close();
-                        LittleFS.remove(tmpPath);
-                    }
-                }
-                
-                storeState = 2;
-                draw();
-            }
-            return;
-        }
-        
-        if (y >= 285 && y <= 315) {
-            if (x < 70) { // BACK
-                storeState = 0;
-                selectedIndex = 0;
-                scrollOffset = 0;
-                draw();
-            } else if (x >= 70 && x < 130) { // UP
-                if (selectedIndex > 0) {
-                    selectedIndex--;
-                    if (selectedIndex < scrollOffset) scrollOffset--;
-                    draw();
-                }
-            } else if (x >= 130 && x < 200) { // SEL
-                selectedAppIndex = selectedIndex;
-                
-                // Fetch Meta for details
-                String tmpPath = "/tmp_meta.json";
-                if (downloadFile(currentApps[selectedAppIndex].metaUrl, tmpPath, "Loading details...")) {
-                    File file = LittleFS.open(tmpPath, "r");
-                    if (file) {
-                        JsonDocument doc;
-                        if (!deserializeJson(doc, file)) {
-                            int appApi = doc["api"] | 1;
-                            if (appApi > KRYONOS_API_LEVEL) {
-                                file.close();
-                                LittleFS.remove(tmpPath);
-                                if (isUpdateMode) {
-                                    dialogMessage = "API " + String(appApi) + " needed to update.\nPlease update OS first!";
-                                } else {
-                                    dialogMessage = "This App Requires KryonOS API " + String(appApi) + "\nPlease update OS!";
-                                }
-                                storeState = 4;
-                                drawDialog();
-                                return;
-                            }
-                            currentApps[selectedAppIndex].name = doc["name"] | currentApps[selectedAppIndex].id;
-                            currentApps[selectedAppIndex].description = doc["description"] | "No description.";
-                            currentApps[selectedAppIndex].author = doc["author"] | "Unknown";
-                            currentApps[selectedAppIndex].version = doc["version"] | "1.0.0";
-                            
-                            // Check if installed and if this is an update
-                            isUpdateMode = false;
-                            String pkgName = doc["packageName"] | currentApps[selectedAppIndex].id;
-                            for (int fsIdx=0; fsIdx<2; fsIdx++) {
-                                String localPath = (fsIdx == 0 ? "/sd/apps/" : "/local/apps/") + pkgName + "/app.json";
-                                if (FileSystem::exists(localPath.c_str())) {
-                                    String localJson = FileSystem::readTextFile(localPath.c_str());
-                                    if (localJson.length() > 0) {
-                                        String localVer = FileSystem::parseJsonValue(localJson, "version");
-                                        if (compareVersions(currentApps[selectedAppIndex].version, localVer) > 0) {
-                                            isUpdateMode = true;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (isUpdateMode) {
-                                String changelog = doc["changelog"] | "";
-                                if (changelog.length() > 0) {
-                                    currentApps[selectedAppIndex].description = changelog;
-                                } else {
-                                    currentApps[selectedAppIndex].description = "Update available!";
-                                }
-                            }
-                        }
-                        file.close();
-                        LittleFS.remove(tmpPath);
-                    }
-                }
-                
-                storeState = 2;
-                draw();
-            } else if (x >= 200) { // DN
-                if (selectedIndex < currentAppCount - 1) {
-                    selectedIndex++;
-                    if (selectedIndex >= scrollOffset + 7) scrollOffset++;
-                    draw();
-                }
-            }
-        }
-    } else if (storeState == 2) { // App Info
+        return;
+    }
+
+    // 3. TELA DE DETALHES DO APP (storeState == 2)
+    if (storeState == 2) {
         if (y >= 230 && y <= 260) {
             if (x >= 25 && x <= 105) { // INSTALL
                 performInstall(selectedAppIndex);
@@ -839,15 +1107,42 @@ void AppStoreUI::handleTouch(uint16_t x, uint16_t y) {
                 draw();
             }
         }
-    } else if (storeState == 3 || storeState == 4) { // Dialog
-        if (x >= 85 && x <= 155 && y >= 220 && y <= 250) {
-            if (categoryCount == 0) {
-                extern int currentState;
-                currentState = 0; // Back to Launcher
-            } else {
-                storeState = 0; // return to categories on dialog close
-                draw();
-            }
+        return;
+    }
+
+    // 4. TOUCH NOS ITENS DA LISTA (Categorias ou Lista de Apps)
+    if (y >= 45 && y <= 270) {
+        int clickedRelative = (y - 45) / 30;
+        int clickedAbs = scrollOffset + clickedRelative;
+
+        if (storeState == 0) {
+            selectCategory(clickedAbs);
+        } else if (storeState == 1) {
+            selectApp(clickedAbs);
         }
+        return;
+    }
+
+    // 5. TOUCH NOS BOTÕES DO RODAPÉ (Fatia proporcional baseada na largura da tela)
+    if (y >= 285 && y <= 315) {
+        uint16_t screenWidth = tft.width();
+        int btnIndex = x / (screenWidth / 4);
+
+        switch (btnIndex) {
+            case 0: // BACK
+                goBack();
+                break;
+            case 1: // UP
+                navigateUp();
+                break;
+            case 2: // SEL
+                executeSelectedItem();
+                break;
+            case 3: // DN
+            default:
+                navigateDown();
+                break;
+        }
+        return;
     }
 }

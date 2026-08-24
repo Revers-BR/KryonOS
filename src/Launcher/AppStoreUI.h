@@ -18,6 +18,7 @@ class AppStoreUI {
 public:
     static void draw();
     static void handleTouch(uint16_t x, uint16_t y);
+    static void handleKeyInput(BoardKey key);
 
     // States
     // 0: Categories List
@@ -54,9 +55,35 @@ private:
     
     // Methods
     static void drawCategories();
+    static void drawCategoriesTall();
+    static void drawCategoriesCompact();
+
     static void drawAppList();
+    static void drawAppListTall();
+    static void drawAppListCompact();
+
     static void drawAppInfo();
+    static void drawAppInfoTall();
+    static void drawAppInfoCompact();
+
     static void drawDialog();
+    static void drawDialogTall();
+    static void drawDialogCompact();
+
+    static bool isCompactMode();
+
+    static void drawFooterButtons(int x, int y, int w, int h);
+
+    static String getScriptFilename(const String& url);
+    static void cleanupTmpFolder(const String& folderPath);
+
+    static void goBack();
+    static void navigateUp();
+    static void navigateDown();
+
+    static void executeSelectedItem();
+    static void selectApp(int index);
+    static void selectCategory(int index);
     
     static bool fetchCategories();
     static bool fetchCategoryApps(const String& url);

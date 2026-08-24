@@ -29,11 +29,16 @@ void LauncherUI::requestRescan() {
 void LauncherUI::scanLocalApps() {
     appCount = 0;
     
-    const int16_t cy = DISP_VER_RES / 2;
-    const int16_t barWidth = (DISP_HOR_RES * 80) / 100;
-    const int16_t barHeight = 12;
-    const int16_t barX = (DISP_HOR_RES - barWidth) / 2;
-    const int16_t barY = cy + 15;
+    // Obtenção dinâmica de dimensões para suporte a 240x135 e 240x320
+    const int16_t screenW = tft.width();
+    const int16_t screenH = tft.height();
+    const bool isSmallScreen = (screenH <= 135);
+
+    const int16_t barWidth = (screenW * 80) / 100;
+    const int16_t barHeight = isSmallScreen ? 8 : 12;
+    const int16_t barX = (screenW - barWidth) / 2;
+    const int16_t centerY = screenH / 2;
+    const int16_t barY = isSmallScreen ? (centerY + 8) : (centerY + 15);
 
     const char* appDirs[] = { "/local/apps/", "/sd/apps/" };
     
@@ -46,6 +51,7 @@ void LauncherUI::scanLocalApps() {
         for (int i = 0; i < count && appCount < 50; i++) {
             if (count > 0) {
                 int fillWidth = map(i + 1, 0, count, 0, barWidth - 4);
+                // Garante preenchimento interno exato sem estourar as bordas
                 tft.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4, TFT_GREEN);
             }
 
@@ -59,7 +65,7 @@ void LauncherUI::scanLocalApps() {
                     String name = FileSystem::parseJsonValue(jsonContent, "name");
                     String category = FileSystem::parseJsonValue(jsonContent, "category");
                     
-                    if (category.length() == 0) category = "General"; // Categoria padrão
+                    if (category.length() == 0) category = "General";
 
                     if (name.length() > 0) {
                         bool duplicate = false;
@@ -70,14 +76,14 @@ void LauncherUI::scanLocalApps() {
                         
                         appPaths[appCount] = entries[i].path;
                         appNames[appCount] = name;
-                        appCategories[appCount] = category; // Armazena a categoria
+                        appCategories[appCount] = category;
                         appIsFolder[appCount] = true;
                         appCount++;
                     }
                 }
             } else {
                 String fname = entries[i].name;
-                if (fname.endsWith(".js")) {
+                if (fname.endsWith(".js") || fname.endsWith(".lua")) {
                     bool duplicate = false;
                     for (int j = 0; j < appCount; j++) {
                         if (appNames[j] == fname) { duplicate = true; break; }
@@ -86,7 +92,7 @@ void LauncherUI::scanLocalApps() {
                     
                     appPaths[appCount] = entries[i].path;
                     appNames[appCount] = fname;
-                    appCategories[appCount] = "Legacy Scripts"; // Categoria para scripts isolados
+                    appCategories[appCount] = "Legacy Scripts";
                     appIsFolder[appCount] = false;
                     appCount++;
                 }

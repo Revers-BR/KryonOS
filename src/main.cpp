@@ -270,6 +270,10 @@ void loop() {
                             currentState = STATE_LAUNCHER;
                     }
                     break;
+
+                case STATE_APP_STORE:
+                    AppStoreUI::handleKeyInput(key);
+                    break;
                 
                 case STATE_SETTINGS:
                     SettingsUI::handleKeyInput(key);
@@ -293,6 +297,10 @@ void loop() {
 
                 case STATE_SETTINGS_TIME_MANUAL:
                     SettingsUI::handleTimeManualKeyInput(key);
+                    break;
+
+                case STATE_INSTALLER:
+                    InstallerUI::handleKeyInput(key);
                     break;
 
                 case STATE_WEB_APP:

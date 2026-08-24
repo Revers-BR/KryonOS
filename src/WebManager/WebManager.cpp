@@ -29,9 +29,12 @@ fs::FS* getFSFromPath(String& path) {
 bool WebManager::init() {
     fs::FS* sd = initSD();
 
-    if(sd == nullptr) return false;
+    File wifiFile;
 
-    File wifiFile = sd->open("/wifi.txt", FILE_READ);
+    if(sd != nullptr){
+        wifiFile = sd->open("/wifi.txt", FILE_READ);
+    };
+
     if (!wifiFile) {
         // Fallback to LittleFS
         wifiFile = LittleFS.open("/wifi.txt", FILE_READ);

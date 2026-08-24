@@ -1962,7 +1962,7 @@ String getPasswordFromPhysicalKeyboard(const String& ssid) {
                 if (key == BOARD_KEY_ENTER) {
                     entering = false;
                     clearModifiers();
-                } else if (key == BOARD_KEY_ESC) { // DEL/BACK
+                } else if (key == BOARD_KEY_DEL) { // DEL/BACK
                     if (inputPass.length() > 0) {
                         inputPass.remove(inputPass.length() - 1);
                     } else {
