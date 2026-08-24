@@ -1,21 +1,36 @@
-# KryonOS App Development Guide
+# KryonOS App Development Guide (JavaScript & Lua)
 
-Welcome to the KryonOS App Development Guide! Developing apps for KryonOS is simple. Apps are written in JavaScript and use a standard folder structure containing metadata and code.
+Welcome to the KryonOS App Development Guide! Developing apps for KryonOS is flexible and simple. KryonOS features a **Dual Scripting Runtime** that natively supports both **JavaScript** (via Duktape) and **Lua** (via `LuaBindings`). 
+
+Apps are structured as standard folders containing metadata (`app.json`) and the main execution script (`main.js` or `main.lua`).
+
+---
 
 ## 1. App Folder Structure
 
-In KryonOS, an app is no longer just a single `.js` file. Instead, every app is a **Folder** containing all its necessary files. When you upload your app via the Web Dashboard, you simply select your app's folder.
+In KryonOS, every app is a standalone folder. When uploading or installing an app, the OS reads the entire folder structure.
 
-A standard app folder looks like this:
+Depending on your preferred language, your app folder will look like one of the following:
+
+### JavaScript App Folder:
 ```text
 MyAwesomeApp/
 ├── app.json
 └── main.js
 ```
 
+### Lua App Folder:
+```text
+MyAwesomeLuaApp/
+├── app.json
+└── main.lua
+```
+
+---
+
 ## 2. The `app.json` File (App Metadata)
 
-The `app.json` file is the heart of your app's identity. The KryonOS Installer reads this file to securely install, update, and categorize your application. 
+The `app.json` file defines your app's identity, entry point, versioning, and category. The KryonOS Installer reads this file to securely manage installation, updates, and UI rendering in the Launcher.
 
 ### Example Format:
 ```json
@@ -23,51 +38,93 @@ The `app.json` file is the heart of your app's identity. The KryonOS Installer r
   "name": "My App",
   "packageName": "com.developer.myapp",
   "version": "1.0.0",
-  "metaUrl": "https://raw.githubusercontent.com/.../myapp/app.json",
+  "entry": "main.js",
+  "metaUrl": "[https://raw.githubusercontent.com/.../myapp/app.json](https://raw.githubusercontent.com/.../myapp/app.json)",
   "author": "John Doe",
-  "description": "A cool app that does awesome things.",
+  "description": "A cool app built for KryonOS.",
   "type": "App",
   "category": "Utility",
   "api": 1,
-  "changelog": "Initial release."
+  "changelog": "Initial release with dual-engine support."
 }
 ```
 
 ### Field Details:
-- **`name`**: The display name of your app. This is what the user sees in the Home.
-- **`packageName`**: A globally unique identifier for your app. **Rules: lowercase, dot-separated style, no spaces** (e.g., `com.yourname.appname`). The OS uses this to detect if your app is already installed.
-- **`version`**: Semantic versioning (e.g. `1.0.0`, `1.2.1`). If a user uploads an app with the same `packageName` but a higher version number, the OS will smartly prompt them to "Update" rather than "Install".
-- **`metaUrl`**: The raw URL to the `app.json` on the internet (e.g. your GitHub repository). The App Store uses this URL to automatically check for new versions of your app.
-- **`author`**: Your name or studio. If someone else tries to upload an app with your `packageName` but a different `author` name, the OS will throw a conflict warning to protect your app from being overwritten by malicious developers.
-- **`description`**: A short summary of your app, displayed to the user when they install your app for the first time.
-- **`type`**: The broad classification (e.g., `App` or `Game`). You can type any value here without restriction.
-- **`category`**: The specific category (e.g., `Benchmark`, `Utility`, `Arcade`). You can type any value here without restriction.
-- **`api`**: The KryonOS API level your app targets. Currently, this should be `1`. (This is verified by the system at time of Installing App.).
-- **`changelog`**: A brief string detailing what changed. When a user updates your app, this replaces the description and shows up under a "What's New" header!
+- **`name`**: Display name shown in the KryonOS Launcher.
+- **`packageName`**: Unique identifier. **Format: lowercase, dot-separated, no spaces** (e.g., `com.yourname.appname`). Used to prevent duplicate installs and handle updates.
+- **`version`**: Semantic versioning (e.g., `1.0.0`, `1.1.0`). Uploading a package with the same `packageName` but a higher version prompts a system update.
+- **`entry`** *(Optional)*: Specifies the entry point script (e.g., `"main.js"` or `"main.lua"`). If omitted, KryonOS automatically checks for `main.js` or `main.lua`.
+- **`metaUrl`**: Direct raw URL to `app.json` for remote App Store version checking.
+- **`author`**: Developer or organization name.
+- **`description`**: Summary displayed during installation/overview.
+- **`type`**: Broad classification (e.g., `App`, `Game`).
+- **`category`**: Category in the Launcher (e.g., `Utility`, `Benchmark`, `Arcade`, `Tools`).
+- **`api`**: KryonOS API level (currently `1`).
+- **`changelog`**: Release notes displayed under "What's New" during updates.
 
-## 3. The `main.js` File (App Logic)
+---
 
-The `main.js` file is the entry point of your application. When a user clicks your app in the Launcher, the OS loads and executes this JavaScript file.
+## 3. Writing App Logic
 
-Because KryonOS handles the underlying C++ translation, you can write simple, high-level JavaScript to draw graphics, read files, and trigger UI components.
+KryonOS abstracts underlying hardware C++ calls into high-level APIs available to both JavaScript and Lua environments.
 
-### Your First App (`main.js`)
-Here is a simple example that turns the screen blue, prints "Hello KryonOS!", waits 3 seconds, and then gracefully exits back to the Launcher:
+---
+
+### Option A: JavaScript (`main.js`)
+JavaScript apps run on the embedded **Duktape** engine (ES5 with async support).
 
 ```javascript
-// Clear the screen
+// Clear screen with blue background
 Graphics.fillScreen(Graphics.COLOR_BLUE);
 
-// Draw some text in the center
+// Draw white text at coordinates (120, 160)
 Graphics.setTextColor(Graphics.COLOR_WHITE);
-Graphics.drawString("Hello KryonOS!", 120, 160, 2);
+Graphics.drawString("Hello KryonOS (JS)!", 120, 160, 2);
 
-// Wait for 3 seconds
+// Delay for 3 seconds
 System.delay(3000);
 
-// Close the app and return to the OS Launcher
+// Return to Launcher
 System.exit();
 ```
 
-> [!IMPORTANT]  
-> To see everything you can do in `main.js`, please check out the full **[JS API Guide](JS_API_Guide.md)**! It contains all the documentation you need for Graphics, GPIO pins, File Systems, UI Components, and more.
+---
+
+### Option B: Lua (`main.lua`)
+Lua apps run directly via `LuaBindings`, giving fast, low-overhead access to display primitives, GPIO control, and system utilities.
+
+```lua
+-- Clear screen with blue background
+Graphics.fillScreen(Graphics.COLOR_BLUE)
+
+-- Draw white text at coordinates (120, 160)
+Graphics.setTextColor(Graphics.COLOR_WHITE)
+Graphics.drawString("Hello KryonOS (Lua)!", 120, 160, 2)
+
+-- Delay for 3 seconds (3000 ms)
+System.delay(3000)
+
+-- Exit back to Launcher
+System.exit()
+```
+
+---
+
+## 4. Hardware API Capabilities
+
+Both JavaScript and Lua engines expose identical underlying core hardware capabilities:
+
+| Feature Category | Functions Provided |
+| :--- | :--- |
+| **Graphics & Display** | `fillScreen()`, `drawPixel()`, `drawLine()`, `drawRect()`, `drawString()`, `setRotation()`, `pushSprite()` |
+| **System & Memory** | `delay()`, `exit()`, `getFreeHeap()`, `getBatteryPercent()`, `getBatteryVoltage()` |
+| **Input Systems** | `isTouched()`, `getTouch()`, `getKeyInput()`, `isShiftActive()`, `isFnActive()` |
+| **GPIO & Hardware** | `pinMode()`, `digitalWrite()`, `digitalRead()`, `analogRead()` |
+| **Networking & VFS** | `wifiConnect()`, `isWifiConnected()`, `readFile()`, `writeFile()` |
+
+---
+
+## 5. Next Steps & References
+
+* **[JS  API Guide](JS_API_Guide.md)** - Detailed method signatures for JavaScript.
+* **[Lua API Guide](LUA_API_Guide.md)** - Detailed method signatures for LUA.
