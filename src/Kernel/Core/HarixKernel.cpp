@@ -449,13 +449,221 @@ void HarixKernel::runFile(const char* filePath) {
     ctx = nullptr;
 }
 
+// Writer callback para lua_dump
+int luaDumpWriter(lua_State* L, const void* p, size_t sz, void* ud) {
+    LuaDumpBuffer* buf = (LuaDumpBuffer*)ud;
+    
+    if (buf->size + sz > buf->capacity) {
+        size_t newCapacity = (buf->capacity == 0) ? 1024 : buf->capacity * 2;
+        while (newCapacity < buf->size + sz) {
+            newCapacity *= 2;
+        }
+        
+        uint8_t* newData = (uint8_t*)realloc(buf->data, newCapacity);
+        if (!newData) {
+            return 1; // Erro de alocação
+        }
+        
+        buf->data = newData;
+        buf->capacity = newCapacity;
+    }
+    
+    memcpy(buf->data + buf->size, p, sz);
+    buf->size += sz;
+    
+    return 0;
+}
+
+// Salva metadados
+bool saveBytecodeMeta(const char* luacPath, const String& sourceMD5, size_t sourceSize) {
+    String metaPath = String(luacPath) + ".meta";
+    String content = sourceMD5 + "|" + String(sourceSize) + "|" + String(millis());
+    return FileSystem::writeTextFile(metaPath.c_str(), content.c_str());
+}
+
+// Carrega metadados
+BytecodeMeta loadBytecodeMeta(const char* luacPath) {
+    BytecodeMeta meta = {"", 0, 0};
+    
+    String metaPath = String(luacPath) + ".meta";
+    if (!FileSystem::exists(metaPath.c_str())) {
+        return meta;
+    }
+    
+    String content = FileSystem::readTextFile(metaPath.c_str());
+    if (content.length() == 0) {
+        return meta;
+    }
+    
+    int sep1 = content.indexOf('|');
+    int sep2 = (sep1 >= 0) ? content.indexOf('|', sep1 + 1) : -1;
+    
+    if (sep1 > 0) {
+        meta.sourceMD5 = content.substring(0, sep1);
+    }
+    
+    if (sep1 >= 0 && sep2 > sep1) {
+        meta.sourceSize = content.substring(sep1 + 1, sep2).toInt();
+    }
+    
+    if (sep2 >= 0) {
+        meta.sourceTimestamp = content.substring(sep2 + 1).toInt();
+    }
+    
+    return meta;
+}
+
+// Verifica se precisa recompilar
+bool needsRecompile(const char* luaPath, const char* luacPath) {
+    // Se não tem .luac, precisa compilar
+    if (!FileSystem::exists(luacPath)) {
+        return true;
+    }
+    
+    // Se não tem .lua, usa .luac (não precisa recompilar)
+    if (!FileSystem::exists(luaPath)) {
+        return false;
+    }
+    
+    // Carrega metadados
+    BytecodeMeta meta = loadBytecodeMeta(luacPath);
+    
+    // Sem metadados, recompila
+    if (meta.sourceMD5.length() == 0) {
+        return true;
+    }
+    
+    // Compara MD5
+    String currentMD5 = FileSystem::getFileMD5(luaPath);
+    if (currentMD5 != meta.sourceMD5) {
+        return true; // Fonte mudou
+    }
+    
+    // Compara tamanho
+    size_t currentSize = FileSystem::getFileSize(luaPath);
+    if (currentSize != meta.sourceSize) {
+        return true; // Tamanho diferente
+    }
+    
+    return false; // Bytecode está atualizado
+}
+
+// Compila e salva bytecode BINÁRIO
+bool compileAndSaveBytecode(lua_State* L, const char* luaPath, const char* luacPath) {
+    // Lê código fonte
+    String source = FileSystem::readTextFile(luaPath);
+    if (source.length() == 0) {
+        Serial.println("Failed to read source for compilation");
+        return false;
+    }
+    
+    // Compila o código
+    int rc = luaL_loadbuffer(L, source.c_str(), source.length(), luaPath);
+    if (rc != LUA_OK) {
+        Serial.print("Compilation error: ");
+        Serial.println(lua_tostring(L, -1));
+        lua_pop(L, 1);
+        return false;
+    }
+    
+    // Dump bytecode para buffer
+    LuaDumpBuffer buf = {nullptr, 0, 0};
+    rc = lua_dump(L, luaDumpWriter, &buf);
+    
+    if (rc != 0) {
+        Serial.println("Failed to dump bytecode");
+        lua_pop(L, 1);
+        if (buf.data) free(buf.data);
+        return false;
+    }
+    
+    // Remove o chunk da pilha
+    lua_pop(L, 1);
+    
+    // Salva bytecode BINÁRIO
+    bool saved = FileSystem::writeBinaryFile(luacPath, buf.data, buf.size);
+    
+    Serial.print("Bytecode saved: ");
+    Serial.print(buf.size);
+    Serial.println(" bytes");
+    
+    free(buf.data);
+    
+    if (!saved) {
+        Serial.println("Failed to save bytecode");
+        return false;
+    }
+    
+    // Salva metadados
+    String md5 = FileSystem::getFileMD5(luaPath);
+    size_t size = FileSystem::getFileSize(luaPath);
+    saveBytecodeMeta(luacPath, md5, size);
+    
+    return true;
+}
+
+// Executa bytecode BINÁRIO
+bool executeBytecode(lua_State* L, const char* luacPath) {
+    // Obtém tamanho do arquivo
+    size_t fileSize = FileSystem::getFileSize(luacPath);
+    if (fileSize == 0) {
+        Serial.println("Bytecode file is empty");
+        return false;
+    }
+    
+    // Verifica se é muito grande (limite de segurança)
+    if (fileSize > 100000) { // 100KB máximo
+        Serial.println("Bytecode file too large");
+        return false;
+    }
+    
+    // Aloca buffer para o bytecode
+    uint8_t* buffer = (uint8_t*)malloc(fileSize);
+    if (!buffer) {
+        Serial.println("Failed to allocate memory for bytecode");
+        return false;
+    }
+    
+    // Lê o bytecode binário
+    size_t bytesRead = FileSystem::readBinaryFile(luacPath, buffer, fileSize);
+    if (bytesRead != fileSize) {
+        Serial.println("Failed to read complete bytecode");
+        free(buffer);
+        return false;
+    }
+    
+    // Verifica assinatura Lua (\x1bLua)
+    if (bytesRead < 4 || 
+        buffer[0] != 0x1B || 
+        buffer[1] != 'L' || 
+        buffer[2] != 'u' || 
+        buffer[3] != 'a') {
+        Serial.println("Invalid bytecode signature");
+        free(buffer);
+        return false;
+    }
+    
+    // Carrega o bytecode
+    int rc = luaL_loadbuffer(L, (const char*)buffer, bytesRead, luacPath);
+    free(buffer);
+    
+    if (rc != LUA_OK) {
+        Serial.print("Failed to load bytecode: ");
+        Serial.println(lua_tostring(L, -1));
+        lua_pop(L, 1);
+        return false;
+    }
+    
+    return true;
+}
+
+// Função principal
 void HarixKernel::runLuaFile(const char* filePath) {
     if (L) {
         lua_close(L);
         L = nullptr;
     }
 
-    // Cria o novo estado do Lua usando o alocador customizado
     L = lua_newstate(my_lua_alloc, nullptr);
     if (!L) {
         Serial.println("Failed to create Lua state for app.");
@@ -481,42 +689,110 @@ void HarixKernel::runLuaFile(const char* filePath) {
             }
             delay(50);
         }
-        return; // Retorna suavemente para o OS
+        return;
     }
 
     luaL_openlibs(L);
-
-    // Configura o manipulador de pânico
     lua_atpanic(L, my_lua_panic);
-
-    // Inicializa os Bindings do Hardware / Sistema
     LuaBindings::init(L);
     
-    {
-        String content = FileSystem::readTextFile(filePath);
-        if (content.length() == 0) {
-            Serial.print("Failed to read Lua file: ");
-            Serial.println(filePath);
-            lua_close(L);
-            L = nullptr;
-            return;
+    // Determina caminhos
+    String luaPath = String(filePath);
+    String luacPath;
+    
+    // Converte entre .lua e .luac
+    if (luaPath.endsWith(".luac")) {
+        luacPath = luaPath;
+        luaPath = luacPath.substring(0, luacPath.length() - 5) + ".lua";
+    } else if (luaPath.endsWith(".lua")) {
+        int lastDotLua = luaPath.lastIndexOf(".lua");
+        luacPath = luaPath.substring(0, lastDotLua) + ".luac";
+    } else {
+        Serial.println("Invalid file extension");
+        lua_close(L);
+        L = nullptr;
+        return;
+    }
+    
+    Serial.print("Lua source: ");
+    Serial.println(luaPath);
+    Serial.print("Lua bytecode: ");
+    Serial.println(luacPath);
+    
+    // Verifica o que existe
+    bool hasLua = FileSystem::exists(luaPath.c_str());
+    bool hasLuac = FileSystem::exists(luacPath.c_str());
+    
+    Serial.print("Has .lua: ");
+    Serial.println(hasLua ? "YES" : "NO");
+    Serial.print("Has .luac: ");
+    Serial.println(hasLuac ? "YES" : "NO");
+    
+    if (!hasLua && !hasLuac) {
+        Serial.println("No Lua files found!");
+        lua_close(L);
+        L = nullptr;
+        return;
+    }
+    
+    int rc = LUA_OK;
+    bool loaded = false;
+    
+    if (hasLuac && !hasLua) {
+        // CASO 1: Só tem bytecode
+        Serial.println("Loading bytecode directly...");
+        loaded = executeBytecode(L, luacPath.c_str());
+        
+    } else if (hasLua && !hasLuac) {
+        // CASO 2: Só tem fonte
+        Serial.println("Compiling source...");
+        if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str())) {
+            loaded = executeBytecode(L, luacPath.c_str());
+        } else {
+            Serial.println("Falling back to source execution");
+            String content = FileSystem::readTextFile(luaPath.c_str());
+            if (content.length() > 0) {
+                rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
+                loaded = (rc == LUA_OK);
+            }
         }
-
-        // Carrega o código do buffer associando o nome do arquivo (ótimo para stacktraces)
-        int rc = luaL_loadbuffer(L, content.c_str(), content.length(), filePath);
+        
+    } else {
+        // CASO 3: Ambos existem
+        if (needsRecompile(luaPath.c_str(), luacPath.c_str())) {
+            Serial.println("Source changed, recompiling...");
+            if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str())) {
+                loaded = executeBytecode(L, luacPath.c_str());
+            } else {
+                Serial.println("Falling back to source execution");
+                String content = FileSystem::readTextFile(luaPath.c_str());
+                if (content.length() > 0) {
+                    rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
+                    loaded = (rc == LUA_OK);
+                }
+            }
+        } else {
+            Serial.println("Using cached bytecode");
+            loaded = executeBytecode(L, luacPath.c_str());
+        }
+    }
+    
+    if (!loaded) {
         if (rc != LUA_OK) {
             checkLuaError(L, rc);
-            lua_close(L);
-            L = nullptr;
-            return;
+        } else {
+            Serial.println("Failed to load script");
         }
-    } // A string `content` sai de escopo e libera a RAM aqui antes do script rodar
-
+        lua_close(L);
+        L = nullptr;
+        return;
+    }
+    
     // Executa o chunk carregado
-    int rc = lua_pcall(L, 0, LUA_MULTRET, 0);
+    rc = lua_pcall(L, 0, LUA_MULTRET, 0);
     checkLuaError(L, rc);
     
-    // Destrói o estado após o app fechar para liberar toda a RAM
+    // Destrói o estado após o app fechar
     lua_close(L);
     L = nullptr;
 }

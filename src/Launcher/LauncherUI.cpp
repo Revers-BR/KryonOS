@@ -465,8 +465,14 @@ static void runApp(const String& path, bool isFolder) {
         filePath = path;
         if (!filePath.endsWith("/")) filePath += "/";
         
-        // Prioridade: Se houver main.lua, roda Lua; senão, roda main.js (mantém JS compatível)
-        if (FileSystem::exists((filePath + "main.lua").c_str())) {
+        // Prioridade de execução:
+        // 1. main.luac (bytecode compilado)
+        // 2. main.lua (código fonte)
+        // 3. main.js (JavaScript)
+        if (FileSystem::exists((filePath + "main.luac").c_str())) {
+            filePath += "main.luac";
+            isLua = true;
+        } else if (FileSystem::exists((filePath + "main.lua").c_str())) {
             filePath += "main.lua";
             isLua = true;
         } else {
@@ -475,7 +481,7 @@ static void runApp(const String& path, bool isFolder) {
         }
     } else {
         filePath = path;
-        isLua = filePath.endsWith(".lua");
+        isLua = filePath.endsWith(".lua") || filePath.endsWith(".luac");
     }
     
     // Executa na engine correspondente

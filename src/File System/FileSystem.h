@@ -57,6 +57,9 @@ public:
     
     // Cryptography
     static String getFileMD5(const char* path);
+
+    static size_t readBinaryFile(const char* path, uint8_t* buffer, size_t maxLen);
+    static bool writeBinaryFile(const char* path, const uint8_t* data, size_t len);
     
     // Mounting/Formatting
     static bool mountSD();

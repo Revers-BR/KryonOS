@@ -47,6 +47,31 @@ FSPath FileSystem::resolve(const char* path) {
     return res;
 }
 
+size_t FileSystem::readBinaryFile(const char* path, uint8_t* buffer, size_t maxLen) {
+    if (path == nullptr || buffer == nullptr || maxLen == 0) return 0;
+    
+    return withFile(path, FILE_READ, [buffer, maxLen](File& f) {
+        if (f.isDirectory()) return (size_t)0;
+        
+        size_t fileSize = f.size();
+        if (fileSize > maxLen) {
+            fileSize = maxLen; // Limita ao buffer disponível
+        }
+        
+        size_t bytesRead = f.read(buffer, fileSize);
+        return bytesRead;
+    });
+}
+
+bool FileSystem::writeBinaryFile(const char* path, const uint8_t* data, size_t len) {
+    if (path == nullptr || data == nullptr || len == 0) return false;
+    
+    return withFile(path, FILE_WRITE, [data, len](File& f) {
+        size_t written = f.write(data, len);
+        return written == len;
+    });
+}
+
 String FileSystem::readTextFile(const char* path) {
     return withFile(path, FILE_READ, [](File& f) {
         if (f.isDirectory() || f.size() == 0) return String("");

@@ -4,6 +4,20 @@
 #include "../../Runtime/duktape.h"
 #include "boards/Board.h"
 #include <esp_heap_caps.h>
+#include <mbedtls/md5.h>
+
+// Estrutura para metadados do bytecode
+struct BytecodeMeta {
+    String sourceMD5;
+    size_t sourceSize;
+    time_t sourceTimestamp;
+};
+
+struct LuaDumpBuffer {
+    uint8_t* data;
+    size_t size;
+    size_t capacity;
+};
 
 // Inclusão dos headers do Lua envolvidos em extern "C" para compatibilidade C++
 extern "C" {
