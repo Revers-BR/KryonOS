@@ -107,6 +107,10 @@ private:
     static int lua_getFileMD5(lua_State *L);
     static int lua_mountSD(lua_State *L);
     static int lua_unmountSD(lua_State *L);
+
+    // Binary files
+    static int lua_readBinaryFile(lua_State *L);
+    static int lua_writeBinaryFile(lua_State *L);
 };
 
 #endif // LUA_BINDINGS_H

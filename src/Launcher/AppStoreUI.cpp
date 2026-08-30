@@ -334,13 +334,14 @@ bool AppStoreUI::checkUpdates() {
     fs::FS* targetFS;
     fs::FS* sdCard = initSD();
     
-    for (int i=0; i<2; i++) {
+    for (int i = 0; i < 2; i++) {
 
-        if(i == 0){
-            if(sdCard == nullptr) continue;
+        if (i == 0) {
+            if (sdCard == nullptr) continue;
             else targetFS = sdCard;
+        } else {
+            targetFS = &LittleFS;
         }
-        else targetFS = &LittleFS;
 
         if (!targetFS->exists("/apps")) continue;
         
@@ -348,69 +349,124 @@ bool AppStoreUI::checkUpdates() {
         if (!root || !root.isDirectory()) continue;
         
         File appDir = root.openNextFile();
+
         while (appDir) {
             if (appDir.isDirectory()) {
+
                 String appJsonPath = "/apps/";
                 String dName = appDir.name();
-                if (dName.lastIndexOf('/') >= 0) dName = dName.substring(dName.lastIndexOf('/') + 1);
+
+                if (dName.lastIndexOf('/') >= 0) {
+                    dName = dName.substring(dName.lastIndexOf('/') + 1);
+                }
+
                 appJsonPath += dName + "/app.json";
+
                 if (targetFS->exists(appJsonPath)) {
                     File jsonFile = targetFS->open(appJsonPath, "r");
+
                     if (jsonFile) {
                         JsonDocument doc;
+
                         if (!deserializeJson(doc, jsonFile)) {
+
                             String metaUrl = doc["metaUrl"].as<String>();
                             String localVer = doc["version"].as<String>();
                             String pkgName = doc["packageName"].as<String>();
                             String name = doc["name"].as<String>();
-                            
+
                             if (metaUrl.length() > 0 && updateAppCount < 50) {
+
                                 String tmpPath = "/tmp_update.json";
-                                if (downloadFile(metaUrl, tmpPath, "Checking " + name + "...")) {
+
+                                if (downloadFile(
+                                    metaUrl,
+                                    tmpPath,
+                                    "Checking " + name + "..."
+                                )) {
+
                                     File remoteJson = LittleFS.open(tmpPath, "r");
+
                                     if (remoteJson) {
                                         JsonDocument rdoc;
+
                                         if (!deserializeJson(rdoc, remoteJson)) {
+
                                             String remoteVer = rdoc["version"].as<String>();
                                             int remoteApi = rdoc["api"] | 1;
-                                            
+
                                             if (compareVersions(remoteVer, localVer) > 0) {
+
                                                 String baseUrl = metaUrl;
                                                 int lastSlash = baseUrl.lastIndexOf('/');
-                                                if (lastSlash > 0) baseUrl = baseUrl.substring(0, lastSlash + 1);
-                                                
-                                                updateApps[updateAppCount].id = pkgName;
-                                                updateApps[updateAppCount].name = rdoc["name"] | name;
-                                                updateApps[updateAppCount].version = remoteVer;
-                                                updateApps[updateAppCount].author = rdoc["author"] | "Unknown";
-                                                String changelog = rdoc["changelog"] | "";
-                                                if (changelog.length() > 0) {
-                                                    updateApps[updateAppCount].description = changelog;
-                                                } else {
-                                                    updateApps[updateAppCount].description = "Update available!";
+
+                                                if (lastSlash > 0) {
+                                                    baseUrl = baseUrl.substring(0, lastSlash + 1);
                                                 }
-                                                updateApps[updateAppCount].metaUrl = metaUrl;
-                                                updateApps[updateAppCount].appUrl = baseUrl + "main.js";
+
+                                                updateApps[updateAppCount].id = pkgName;
+                                                updateApps[updateAppCount].name =
+                                                    rdoc["name"] | name;
+
+                                                updateApps[updateAppCount].version =
+                                                    remoteVer;
+
+                                                updateApps[updateAppCount].author =
+                                                    rdoc["author"] | "Unknown";
+
+                                                String changelog =
+                                                    rdoc["changelog"] | "";
+
+                                                if (changelog.length() > 0) {
+                                                    updateApps[updateAppCount].description =
+                                                        changelog;
+                                                } else {
+                                                    updateApps[updateAppCount].description =
+                                                        "Update available!";
+                                                }
+
+                                                updateApps[updateAppCount].metaUrl =
+                                                    metaUrl;
+
+                                                /*
+                                                 * Não força mais main.js.
+                                                 *
+                                                 * O appUrl agora guarda a URL base
+                                                 * da aplicação. Durante a instalação,
+                                                 * performInstall() tenta:
+                                                 *
+                                                 * 1. main.luac
+                                                 * 2. main.lua
+                                                 * 3. main.js
+                                                 */
+                                                updateApps[updateAppCount].appUrl =
+                                                    baseUrl;
+
                                                 updateAppCount++;
                                             }
                                         }
+
                                         remoteJson.close();
                                     }
+
                                     LittleFS.remove(tmpPath);
                                 }
                             }
                         }
+
                         jsonFile.close();
                     }
                 }
             }
+
             appDir = root.openNextFile();
         }
     }
     
     // Copy to currentApps so the UI uses it
     currentAppCount = updateAppCount;
-    for (int i=0; i<updateAppCount; i++) {
+
+    for (int i = 0; i < updateAppCount; i++) {
         currentApps[i] = updateApps[i];
     }
     
@@ -424,10 +480,16 @@ bool AppStoreUI::checkUpdates() {
     // Sort apps alphabetically by name (case-insensitive)
     for (int i = 0; i < currentAppCount - 1; i++) {
         for (int j = 0; j < currentAppCount - i - 1; j++) {
-            String name1 = currentApps[j].name; name1.toLowerCase();
-            String name2 = currentApps[j + 1].name; name2.toLowerCase();
+
+            String name1 = currentApps[j].name;
+            name1.toLowerCase();
+
+            String name2 = currentApps[j + 1].name;
+            name2.toLowerCase();
+
             if (name1.compareTo(name2) > 0) {
                 AppStoreItem temp = currentApps[j];
+
                 currentApps[j] = currentApps[j + 1];
                 currentApps[j + 1] = temp;
             }
@@ -437,25 +499,128 @@ bool AppStoreUI::checkUpdates() {
     return true;
 }
 
-// Detecta se o arquivo do app deve ser main.lua ou main.js com base na URL
+/*
+ * Retorna o nome do arquivo com base em uma URL que já
+ * possui uma extensão conhecida.
+ */
 String AppStoreUI::getScriptFilename(const String& url) {
+
     String lower = url;
     lower.toLowerCase();
+
+    if (lower.endsWith(".luac")) {
+        return "main.luac";
+    }
+
     if (lower.endsWith(".lua")) {
         return "main.lua";
     }
-    return "main.js"; // Padrão
+
+    if (lower.endsWith(".js")) {
+        return "main.js";
+    }
+
+    return "";
 }
 
-// Limpa todos os possíveis arquivos de instalação temporária (meta e scripts)
+/*
+ * Tenta baixar o script remoto seguindo a prioridade:
+ *
+ * 1. main.luac
+ * 2. main.lua
+ * 3. main.js
+ *
+ * O primeiro arquivo encontrado é utilizado.
+ */
+bool AppStoreUI::downloadScriptWithPriority(
+    const String& baseUrl,
+    const String& destFolder,
+    String& selectedFilename
+) {
+    String cleanBaseUrl = baseUrl;
+
+    // Garante que a URL termine com /
+    if (!cleanBaseUrl.endsWith("/")) {
+        cleanBaseUrl += "/";
+    }
+
+    const char* filenames[] = {
+        "main.luac",
+        "main.lua",
+        "main.js"
+    };
+
+    for (int i = 0; i < 3; i++) {
+
+        String filename = filenames[i];
+        String remoteUrl = cleanBaseUrl + filename;
+        String localPath = destFolder + "/" + filename;
+
+        Serial.printf(
+            "[AppStore] Tentando arquivo principal: %s\n",
+            remoteUrl.c_str()
+        );
+
+        /*
+         * downloadFile() deve retornar false quando o arquivo
+         * não existir ou não puder ser baixado.
+         */
+        if (downloadFile(
+            remoteUrl,
+            localPath,
+            "Downloading " + filename + "..."
+        )) {
+
+            selectedFilename = filename;
+
+            Serial.printf(
+                "[AppStore] Arquivo principal selecionado: %s\n",
+                filename.c_str()
+            );
+
+            return true;
+        }
+
+        /*
+         * Remove qualquer arquivo parcial criado pela tentativa.
+         */
+        if (FileSystem::exists(localPath.c_str())) {
+            FileSystem::deleteFile(localPath.c_str());
+        }
+    }
+
+    Serial.println(
+        "[AppStore] ERRO: nenhum arquivo principal encontrado."
+    );
+
+    return false;
+}
+
+/*
+ * Remove todos os arquivos temporários da instalação.
+ */
 void AppStoreUI::cleanupTmpFolder(const String& destFolder) {
+
     String jsonFile = destFolder + "/app.json";
     String jsFile   = destFolder + "/main.js";
     String luaFile  = destFolder + "/main.lua";
+    String luacFile = destFolder + "/main.luac";
 
-    if (FileSystem::exists(jsonFile.c_str())) FileSystem::deleteFile(jsonFile.c_str());
-    if (FileSystem::exists(jsFile.c_str()))   FileSystem::deleteFile(jsFile.c_str());
-    if (FileSystem::exists(luaFile.c_str()))  FileSystem::deleteFile(luaFile.c_str());
+    if (FileSystem::exists(jsonFile.c_str())) {
+        FileSystem::deleteFile(jsonFile.c_str());
+    }
+
+    if (FileSystem::exists(jsFile.c_str())) {
+        FileSystem::deleteFile(jsFile.c_str());
+    }
+
+    if (FileSystem::exists(luaFile.c_str())) {
+        FileSystem::deleteFile(luaFile.c_str());
+    }
+
+    if (FileSystem::exists(luacFile.c_str())) {
+        FileSystem::deleteFile(luacFile.c_str());
+    }
 
     if (FileSystem::exists(destFolder.c_str())) {
         FileSystem::rmdir(destFolder.c_str());
@@ -463,40 +628,115 @@ void AppStoreUI::cleanupTmpFolder(const String& destFolder) {
 }
 
 void AppStoreUI::performInstall(int appIdx) {
+
     AppStoreItem& app = currentApps[appIdx];
-    
-    Serial.printf("[AppStore] Iniciando instalacao do app #%d: %s\n", appIdx, app.name.c_str());
-    
+
+    Serial.printf(
+        "[AppStore] Iniciando instalacao do app #%d: %s\n",
+        appIdx,
+        app.name.c_str()
+    );
+
     String destFolder = "/local/tmp_download";
     String metaPath = destFolder + "/app.json";
-    
-    // Identifica dinamicamente se será main.js ou main.lua
-    String scriptName = getScriptFilename(app.appUrl);
-    String appPath = destFolder + "/" + scriptName;
-    
+
     cleanupTmpFolder(destFolder);
-    
-    // Cria o diretório (sem barra no final)
+
+    // Cria o diretório
     if (!FileSystem::mkdir(destFolder.c_str())) {
+        Serial.println(
+            "[AppStore] ERRO: nao foi possivel criar diretorio temporario."
+        );
         return;
     }
-    bool metaOk = downloadFile(app.metaUrl, metaPath, "Downloading Meta...");
+
+    /*
+     * Baixa o app.json primeiro.
+     */
+    bool metaOk = downloadFile(
+        app.metaUrl,
+        metaPath,
+        "Downloading Meta..."
+    );
+
     if (!metaOk) {
+        Serial.println(
+            "[AppStore] ERRO: falha ao baixar app.json."
+        );
+
         cleanupTmpFolder(destFolder);
         return;
     }
-    bool appOk = downloadFile(app.appUrl, appPath, "Downloading App...");
+
+    /*
+     * app.appUrl agora pode ser:
+     *
+     * - URL completa para main.luac
+     * - URL completa para main.lua
+     * - URL completa para main.js
+     * - URL base da aplicação
+     *
+     * Se for uma URL de arquivo, usa diretamente.
+     * Caso contrário, procura seguindo a prioridade:
+     *
+     * main.luac -> main.lua -> main.js
+     */
+    String scriptName = getScriptFilename(app.appUrl);
+    bool appOk = false;
+
+    if (scriptName.length() > 0) {
+
+        String appPath = destFolder + "/" + scriptName;
+
+        Serial.printf(
+            "[AppStore] Baixando arquivo principal: %s\n",
+            scriptName.c_str()
+        );
+
+        appOk = downloadFile(
+            app.appUrl,
+            appPath,
+            "Downloading " + scriptName + "..."
+        );
+
+    } else {
+
+        /*
+         * URL base: procura pelo arquivo principal.
+         */
+        appOk = downloadScriptWithPriority(
+            app.appUrl,
+            destFolder,
+            scriptName
+        );
+    }
+
     if (!appOk) {
+
+        Serial.println(
+            "[AppStore] ERRO: falha ao baixar arquivo principal."
+        );
+
         cleanupTmpFolder(destFolder);
         return;
     }
-    
+
+    Serial.printf(
+        "[AppStore] Script selecionado: %s\n",
+        scriptName.c_str()
+    );
+
     InstallerUI::autoInstallPath = destFolder;
+
     currentState = 3; // STATE_INSTALLER
     storeState = 0;   // Reset AppStoreUI state
 
-    Serial.println("[AppStore] Instalacao preparada. Redirecionando para InstallerUI...");
+    Serial.println(
+        "[AppStore] Instalacao preparada. "
+        "Redirecionando para InstallerUI..."
+    );
 }
+
 
 // ============================================================
 // UI Draw Methods (Compatível com 240x320 Touch e 240x135 Teclado/Botões)

@@ -234,7 +234,6 @@ esptool.py --chip esp32 --port COM3 --baud 921600 write_flash -z \
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Haris16-code/KryonOS)
 * [Guia de Desenvolvimento Lua & JS](./Documentation/App_Development_Guide.md) - Aprenda a criar aplicativos para o KryonOS.
 * [Documentação da API System & LuaBindings](./Documentation/JS_API_Guide.md) - Referência de métodos para GPIO, Display, Teclado e Rede.
-* [Emulador & IDE Web](./Documentation/Web_IDE.md) - Como utilizar o emulador integrado no navegador.
 * [KryonOS Wiki](https://github.com/Haris16-code/KryonOS/wiki) - Manuais completos de arquitetura e schematics das placas.
 * [Discussions](https://github.com/Haris16-code/KryonOS/discussions) - Tire dúvidas e compartilhe seus projetos com a comunidade.
 

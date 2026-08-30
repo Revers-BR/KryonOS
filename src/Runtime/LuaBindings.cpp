@@ -96,6 +96,11 @@ void LuaBindings::init(lua_State *L) {
     lua_pushcfunction(L, lua_readTextFile);    lua_setfield(L, -2, "readTextFile");
     lua_pushcfunction(L, lua_writeTextFile);   lua_setfield(L, -2, "writeTextFile");
     lua_pushcfunction(L, lua_appendTextFile);  lua_setfield(L, -2, "appendTextFile");
+
+    // --- Binary Files --- 
+    lua_pushcfunction(L, lua_readBinaryFile);  lua_setfield(L, -2, "readBinaryFile"); 
+    lua_pushcfunction(L, lua_writeBinaryFile); lua_setfield(L, -2, "writeBinaryFile");
+    
     lua_pushcfunction(L, lua_deleteFile);      lua_setfield(L, -2, "deleteFile");
     lua_pushcfunction(L, lua_renameFile);      lua_setfield(L, -2, "renameFile");
     lua_pushcfunction(L, lua_fileExists);      lua_setfield(L, -2, "exists");
@@ -1108,6 +1113,115 @@ int LuaBindings::lua_isFile(lua_State *L) {
     
     bool isFile = FileSystem::isFile(path);
     lua_pushboolean(L, isFile ? 1 : 0);
+    return 1;
+}
+
+// ============================================================
+// BINARY FILES
+// ============================================================
+
+int LuaBindings::lua_readBinaryFile(lua_State *L)
+{
+    const char *path = lua_tostring(L, 1);
+
+    if (!path) {
+        path = "";
+    }
+
+    // Verifica se o arquivo existe.
+    if (!FileSystem::exists(path)) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // Descobre o tamanho do arquivo.
+    size_t fileSize = FileSystem::getFileSize(path);
+
+    // Arquivo vazio.
+    if (fileSize == 0) {
+        lua_pushliteral(L, "");
+        return 1;
+    }
+
+    // Aloca buffer temporário.
+    uint8_t *buffer = new uint8_t[fileSize];
+
+    if (!buffer) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // Lê o arquivo.
+    size_t bytesRead = FileSystem::readBinaryFile(
+        path,
+        buffer,
+        fileSize
+    );
+
+    // Erro de leitura.
+    if (bytesRead == 0) {
+        delete[] buffer;
+
+        lua_pushnil(L);
+        return 1;
+    }
+
+    // IMPORTANTE:
+    // lua_pushlstring() aceita bytes nulos (0x00).
+    // Portanto, funciona corretamente para arquivos binários.
+    lua_pushlstring(
+        L,
+        reinterpret_cast<const char *>(buffer),
+        bytesRead
+    );
+
+    delete[] buffer;
+
+    return 1;
+}
+
+
+int LuaBindings::lua_writeBinaryFile(lua_State *L)
+{
+    const char *path = lua_tostring(L, 1);
+
+    if (!path) {
+        path = "";
+    }
+
+    // Obtém os dados como string Lua.
+    // lua_tolstring/luaL_checklstring preserva bytes 0x00.
+    size_t len = 0;
+
+    const char *data = luaL_checklstring(
+        L,
+        2,
+        &len
+    );
+
+    if (!data) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    // Não permite escrever arquivo vazio.
+    if (len == 0) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    // Converte a string Lua em buffer binário.
+    bool success = FileSystem::writeBinaryFile(
+        path,
+        reinterpret_cast<const uint8_t *>(data),
+        len
+    );
+
+    lua_pushboolean(
+        L,
+        success ? 1 : 0
+    );
+
     return 1;
 }
 

@@ -81,6 +81,8 @@ private:
     static void navigateUp();
     static void navigateDown();
 
+    static bool downloadScriptWithPriority( const String& baseUrl, const String& destFolder, String& selectedFilename);
+
     static void executeSelectedItem();
     static void selectApp(int index);
     static void selectCategory(int index);

@@ -750,7 +750,7 @@ void InstallerUI::drawHelp() {
     tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.drawString("1. Put app folder on SD.", 10, y, 2); y += 14;
     tft.drawString("2. Folder needs app.json", 10, y, 2); y += 14;
-    tft.drawString("   and main.js inside.", 10, y, 2); y += 14;
+    tft.drawString("   and main.luac or main.lua or main.js inside.", 10, y, 2); y += 14;
     tft.drawString("3. Tap [APP] to install.", 10, y, 2); y += 14;
     tft.drawString("4. App appears in Home.", 10, y, 2); y += 20;
     
@@ -896,15 +896,16 @@ void InstallerUI::navigateDown() {
 bool InstallerUI::isScriptFile(const String& filename) {
     String lower = filename;
     lower.toLowerCase();
-    return lower.endsWith(".js") || lower.endsWith(".lua");
+    return lower.endsWith(".luac") || lower.endsWith(".js") || lower.endsWith(".lua");
 }
 
 String InstallerUI::findAppMainFile(const String& folderPath) {
     String path = folderPath;
     if (!path.endsWith("/")) path += "/";
 
-    if (FileSystem::exists((path + "main.js").c_str()))  return path + "main.js";
+    if (FileSystem::exists((path + "main.luac").c_str())) return path + "main.luac";
     if (FileSystem::exists((path + "main.lua").c_str())) return path + "main.lua";
+    if (FileSystem::exists((path + "main.js").c_str()))  return path + "main.js";
     return "";
 }
 
@@ -912,6 +913,7 @@ void InstallerUI::cleanupTmpDownload(const String& folderPath) {
     FileSystem::deleteFile((folderPath + "app.json").c_str());
     FileSystem::deleteFile((folderPath + "main.js").c_str());
     FileSystem::deleteFile((folderPath + "main.lua").c_str());
+    FileSystem::deleteFile((folderPath + "main.luac").c_str());
     FileSystem::rmdir(folderPath.c_str());
 }
 
