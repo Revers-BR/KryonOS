@@ -2,7 +2,7 @@
 #define JS_BINDINGS_H
 
 #include <Arduino.h>
-#include "duktape.h"
+#include "Runtime/duktape.h"
 #include "boards/Board.h"
 
 class JSBindings {
