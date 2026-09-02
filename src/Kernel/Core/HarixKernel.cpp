@@ -1,6 +1,9 @@
 #include "HarixKernel.h"
-#include "../../Runtime/JSBindings.h"
-#include "../../Runtime/LuaBindings.h"
+#include "Runtime/WrenAPI.h"
+#include "Runtime/JSBindings.h"
+#include "Runtime/LuaBindings.h"
+#include "Runtime/WrenBindings.h"
+#include "Runtime/WrenRuntime.h"
 #include "../../File System/FileSystem.h"
 
 extern "C" {
@@ -10,7 +13,6 @@ extern "C" {
 }
 
 lua_State *HarixKernel::L = nullptr;
-
 duk_context *HarixKernel::ctx = nullptr;
 
 // Função auxiliar de alocação com fallback para a memória interna
@@ -795,4 +797,83 @@ void HarixKernel::runLuaFile(const char* filePath) {
     // Destrói o estado após o app fechar
     lua_close(L);
     L = nullptr;
+}
+
+void HarixKernel::runWrenFile(const char* filePath)
+{
+    // =====================================================
+    // Read Wren file
+    // =====================================================
+
+    String content =
+        FileSystem::readTextFile(filePath);
+
+    if (content.length() == 0)
+    {
+        Serial.print(
+            "Failed to read Wren file: "
+        );
+
+        Serial.println(filePath);
+
+        return;
+    }
+
+    // =====================================================
+    // Build source
+    // =====================================================
+
+    String source;
+
+    source.reserve(
+        strlen(HARIX_WREN_API_SOURCE) +
+        content.length() +
+        2
+    );
+
+    source += HARIX_WREN_API_SOURCE;
+    source += "\n";
+    source += content;
+
+
+    // =====================================================
+    // Initialize Wren
+    // =====================================================
+
+    if (!WrenRuntime::begin())
+    {
+        Serial.println(
+            "[Wren] Failed to initialize VM"
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // Execute
+    // =====================================================
+
+    
+    int apiLines = 0;
+
+    for (const char* p = HARIX_WREN_API_SOURCE; *p; p++)
+    {
+        if (*p == '\n')
+            apiLines++;
+    }
+
+    apiLines++;
+
+    WrenRuntime::execute(
+        source.c_str(),
+        apiLines
+    );
+
+
+    // =====================================================
+    // Destroy VM
+    // =====================================================
+
+    WrenRuntime::shutdown();
 }

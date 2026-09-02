@@ -128,3 +128,4 @@ Both JavaScript and Lua engines expose identical underlying core hardware capabi
 
 * **[JS  API Guide](JS_API_Guide.md)** - Detailed method signatures for JavaScript.
 * **[Lua API Guide](LUA_API_Guide.md)** - Detailed method signatures for LUA.
+* **[WREN API Guide](WREN_API_Guide.md)** - Detailed method signatures for WREN.

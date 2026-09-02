@@ -1,10 +1,10 @@
 #ifndef HARIX_KERNEL_H
 #define HARIX_KERNEL_H
 
-#include "../../Runtime/duktape.h"
 #include "boards/Board.h"
 #include <esp_heap_caps.h>
 #include <mbedtls/md5.h>
+#include "Runtime/duktape.h"
 
 // Estrutura para metadados do bytecode
 struct BytecodeMeta {
@@ -36,14 +36,15 @@ public:
 
     // --- Lua ---
     static void runLuaFile(const char* filePath);
-    static void executeLua(const char* luaCode);
-    static String checkLuaSyntax(const char* luaCode); // Opcional (caso queira validação de sintaxe para Lua)
     static lua_State *L;
+
+    static void runWrenFile(const char* filePath);
 
 private:
     // --- Tratadores de Erro Internos ---
     static void checkJSError(duk_context *ctx, duk_int_t result);
     static void checkLuaError(lua_State *L, int result);
+
 };
 
 #endif // HARIX_KERNEL_H
