@@ -1,6 +1,7 @@
 #ifndef WREN_BINDINGS_H
 #define WREN_BINDINGS_H
 
+#include <vector>
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "boards/Board.h"
@@ -17,6 +18,15 @@ public:
     // =====================================================
 
     static void init(WrenVM* vm);
+    static void clearErrors();
+
+    static std::vector<String> errorLines;
+
+    template <typename T>
+    static std::vector<String> wrapText(T* gfx, const String& text, int maxWidth);
+
+    template <typename T>
+    static void drawErrorScreen(T* gfx, const char* title, const char* message);
 
     // =====================================================
     // GPIO

@@ -37,92 +37,43 @@ void WrenRuntime::errorFn(
 
     switch (type)
     {
-        case WREN_ERROR_COMPILE:
-            typeName = "Compile Error";
-            break;
-
-        case WREN_ERROR_STACK_TRACE:
-            typeName = "Stack Trace";
-            break;
-
-        case WREN_ERROR_RUNTIME:
-            typeName = "Runtime Error";
-            break;
-
-        default:
-            break;
+        case WREN_ERROR_COMPILE:      typeName = "Compile Error"; break;
+        case WREN_ERROR_STACK_TRACE:  typeName = "Stack Trace";   break;
+        case WREN_ERROR_RUNTIME:      typeName = "Runtime Error"; break;
+        default: break;
     }
 
-
-    // =====================================================
-    // Calcular linha real
-    // =====================================================
-
     int realLine = line;
-
     if (type == WREN_ERROR_STACK_TRACE &&
         WrenRuntime::apiLineCount > 0 &&
         line > WrenRuntime::apiLineCount)
     {
-        realLine =
-            line - WrenRuntime::apiLineCount;
+        realLine = line - WrenRuntime::apiLineCount;
     }
 
-
-    // =====================================================
-    // Serial
-    // =====================================================
-
+    // Serial (sem mudanças)
     Serial.print("[Wren] ");
     Serial.print(typeName);
-
     if (module)
     {
         Serial.print(" ");
         Serial.print(module);
-
-        if (realLine > 0)
-        {
-            Serial.print(":");
-            Serial.print(realLine);
-        }
+        if (realLine > 0) { Serial.print(":"); Serial.print(realLine); }
     }
-
     Serial.print(" - ");
-    Serial.println(
-        msg ? msg : "no message"
-    );
+    Serial.println(msg ? msg : "no message");
 
-
-    // =====================================================
-    // TFT
-    // =====================================================
-
+    // TFT — continua chamando showError, só que agora ele acumula
     String errorText;
-
     if (module)
     {
         errorText += module;
-
-        if (realLine > 0)
-        {
-            errorText += ":";
-            errorText += String(realLine);
-        }
-
+        if (realLine > 0) { errorText += ":"; errorText += String(realLine); }
         errorText += "\n";
     }
+    if (msg) errorText += msg;
 
-    if (msg)
-    {
-        errorText += msg;
-    }
-
-
-    WrenBindings::showError(
-        typeName,
-        errorText.c_str()
-    );
+    WrenBindings::showError(typeName, errorText.c_str());
 }
 
 // =====================================================

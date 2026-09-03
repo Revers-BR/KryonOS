@@ -437,7 +437,8 @@ bool AppStoreUI::checkUpdates() {
                                                  *
                                                  * 1. main.luac
                                                  * 2. main.lua
-                                                 * 3. main.js
+                                                 * 3. main.wren
+                                                 * 4. main.js
                                                  */
                                                 updateApps[updateAppCount].appUrl =
                                                     baseUrl;
@@ -516,6 +517,10 @@ String AppStoreUI::getScriptFilename(const String& url) {
         return "main.lua";
     }
 
+    if (lower.endsWith(".wren")) {
+        return "main.wren";
+    }
+
     if (lower.endsWith(".js")) {
         return "main.js";
     }
@@ -528,7 +533,8 @@ String AppStoreUI::getScriptFilename(const String& url) {
  *
  * 1. main.luac
  * 2. main.lua
- * 3. main.js
+ * 3. main.wren
+ * 4. main.js
  *
  * O primeiro arquivo encontrado é utilizado.
  */
@@ -547,6 +553,7 @@ bool AppStoreUI::downloadScriptWithPriority(
     const char* filenames[] = {
         "main.luac",
         "main.lua",
+        "main.wren",
         "main.js"
     };
 
@@ -605,6 +612,7 @@ void AppStoreUI::cleanupTmpFolder(const String& destFolder) {
     String jsFile   = destFolder + "/main.js";
     String luaFile  = destFolder + "/main.lua";
     String luacFile = destFolder + "/main.luac";
+    String wrenFile = destFolder + "/main.wren";
 
     if (FileSystem::exists(jsonFile.c_str())) {
         FileSystem::deleteFile(jsonFile.c_str());
@@ -620,6 +628,10 @@ void AppStoreUI::cleanupTmpFolder(const String& destFolder) {
 
     if (FileSystem::exists(luacFile.c_str())) {
         FileSystem::deleteFile(luacFile.c_str());
+    }
+
+    if (FileSystem::exists(wrenFile.c_str())) {
+        FileSystem::deleteFile(wrenFile.c_str());
     }
 
     if (FileSystem::exists(destFolder.c_str())) {
@@ -673,13 +685,14 @@ void AppStoreUI::performInstall(int appIdx) {
      *
      * - URL completa para main.luac
      * - URL completa para main.lua
+     * - URL completa para main.wren
      * - URL completa para main.js
      * - URL base da aplicação
      *
      * Se for uma URL de arquivo, usa diretamente.
      * Caso contrário, procura seguindo a prioridade:
      *
-     * main.luac -> main.lua -> main.js
+     * main.luac -> main.lua -> main.wren -> main.js
      */
     String scriptName = getScriptFilename(app.appUrl);
     bool appOk = false;

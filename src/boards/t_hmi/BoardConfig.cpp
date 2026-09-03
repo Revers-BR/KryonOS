@@ -80,7 +80,7 @@ float getBatteryVoltage(void) {
     
     // Como há um divisor de tensão (geralmente 100k / 100k), multiplica-se por 2.
     // Se a leitura parecer metade da real, ajuste o fator de 2.0.
-    float voltage = (raw_mv * 2.0f) / 1000.0f; 
+    float voltage = (raw_mv * 2.2f) / 1000.0f; 
     return voltage;
 }
 

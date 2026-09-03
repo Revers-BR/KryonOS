@@ -461,27 +461,12 @@ static void runApp(const String& path, bool isFolder)
 
     String filePath;
 
-    enum AppEngine
-    {
-        ENGINE_LUA,
-        ENGINE_WREN,
-        ENGINE_DUKTAPE
-    };
-
-    AppEngine engine = ENGINE_DUKTAPE;
-
-
-    // =====================================================
-    // Resolve arquivo do aplicativo
-    // =====================================================
-
     if (isFolder)
     {
         filePath = path;
 
         if (!filePath.endsWith("/"))
             filePath += "/";
-
 
         // -------------------------------------------------
         // Prioridade:
@@ -492,29 +477,21 @@ static void runApp(const String& path, bool isFolder)
         // 4. main.js
         // -------------------------------------------------
 
-        if (FileSystem::exists(
-                (filePath + "main.luac").c_str()))
+        if (FileSystem::exists((filePath + "main.luac").c_str()))
         {
             filePath += "main.luac";
-            engine = ENGINE_LUA;
         }
-        else if (FileSystem::exists(
-                     (filePath + "main.lua").c_str()))
+        else if (FileSystem::exists((filePath + "main.lua").c_str()))
         {
             filePath += "main.lua";
-            engine = ENGINE_LUA;
         }
-        else if (FileSystem::exists(
-                     (filePath + "main.wren").c_str()))
+        else if (FileSystem::exists((filePath + "main.wren").c_str()))
         {
             filePath += "main.wren";
-            engine = ENGINE_WREN;
         }
-        else if (FileSystem::exists(
-                     (filePath + "main.js").c_str()))
+        else if (FileSystem::exists((filePath + "main.js").c_str()))
         {
             filePath += "main.js";
-            engine = ENGINE_DUKTAPE;
         }
         else
         {
@@ -526,103 +503,29 @@ static void runApp(const String& path, bool isFolder)
     {
         filePath = path;
 
+        bool knownExtension =
+            filePath.endsWith(".lua")  ||
+            filePath.endsWith(".luac") ||
+            filePath.endsWith(".wren") ||
+            filePath.endsWith(".js");
 
-        // -------------------------------------------------
-        // Detecta engine pela extensão
-        // -------------------------------------------------
-
-        if (filePath.endsWith(".lua") ||
-            filePath.endsWith(".luac"))
-        {
-            engine = ENGINE_LUA;
-        }
-        else if (filePath.endsWith(".wren"))
-        {
-            engine = ENGINE_WREN;
-        }
-        else if (filePath.endsWith(".js"))
-        {
-            engine = ENGINE_DUKTAPE;
-        }
-        else
+        if (!knownExtension)
         {
             Serial.print("[App] Unknown file type: ");
             Serial.println(filePath);
-
             return;
         }
     }
 
+    Serial.print("[App] Executando: ");
+    Serial.println(filePath);
 
-    // =====================================================
-    // Executa na engine correspondente
-    // =====================================================
+    HarixKernel::runFile(filePath.c_str());
 
-    switch (engine)
-    {
-        case ENGINE_LUA:
-
-            Serial.print("[App] Lua: ");
-            Serial.println(filePath);
-
-            HarixKernel::runLuaFile(
-                filePath.c_str()
-            );
-
-            break;
-
-
-        case ENGINE_WREN:
-
-            Serial.print("[App] Wren: ");
-            Serial.println(filePath);
-
-            HarixKernel::runWrenFile(
-                filePath.c_str()
-            );
-
-            break;
-
-
-        case ENGINE_DUKTAPE:
-
-            Serial.print("[App] JavaScript: ");
-            Serial.println(filePath);
-
-            HarixKernel::runFile(
-                filePath.c_str()
-            );
-
-            break;
-    }
-
-
-    // =====================================================
-    // Botão de saída padrão
-    // =====================================================
-
-    tft.fillRoundRect(
-        200,
-        0,
-        40,
-        30,
-        5,
-        TFT_RED
-    );
-
-    tft.setTextColor(
-        TFT_WHITE,
-        TFT_RED
-    );
-
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
     tft.setTextDatum(MC_DATUM);
-
-    tft.drawString(
-        "X",
-        220,
-        15,
-        2
-    );
+    tft.drawString("X", 220, 15, 2);
 }
 
 // Preenche o buffer interno de itens

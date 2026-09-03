@@ -4,13 +4,8 @@
 #include "Runtime/LuaBindings.h"
 #include "Runtime/WrenBindings.h"
 #include "Runtime/WrenRuntime.h"
+#include "Kernel/Core/EngineTaskRunner.h"
 #include "../../File System/FileSystem.h"
-
-extern "C" {
-    #include "lua.h"
-    #include "lauxlib.h"
-    #include "lualib.h"
-}
 
 lua_State *HarixKernel::L = nullptr;
 duk_context *HarixKernel::ctx = nullptr;
@@ -382,75 +377,6 @@ String HarixKernel::checkSyntax(const char* jsCode) {
     return params.result;
 }
 
-void HarixKernel::runFile(const char* filePath) {
-    if (ctx) {
-        duk_destroy_heap(ctx);
-        ctx = nullptr;
-    }
-
-    ctx = duk_create_heap(my_alloc, my_realloc, my_free, nullptr, my_fatal);
-    if (!ctx) {
-        Serial.println("Failed to create Duktape heap for app.");
-        tft.fillScreen(TFT_RED);
-        tft.setTextColor(TFT_WHITE, TFT_RED);
-        tft.drawString("Out Of Ram Error", 10, 20, 4);
-        tft.drawString("Please turn off WiFi in", 10, 60, 2);
-        tft.drawString("setting to free the ram", 10, 80, 2);
-        tft.drawString("and make this app running", 10, 100, 2);
-        
-        // Draw an 'X' to close
-        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-        tft.setTextColor(TFT_RED, TFT_WHITE);
-        tft.drawString("X", 215, 8, 2);
-        
-        uint16_t tx, ty;
-        while(true) {
-            // 1. Checa por Touch no botão 'X'
-            if (getTouch(&tx, &ty)) {
-                if (tx >= 200 && ty <= 40) break;
-            }
-
-            // 2. Checa por Tecla Pressionada (Entrada do Cardputer)
-            BoardKey key = getKeyInput();
-            if (key == BOARD_KEY_ESC) {
-                break;
-            }
-
-            delay(50);
-        }
-        return; // Soft exit back to OS
-    }
-
-    JSBindings::init(ctx);
-    
-    {
-        String content = FileSystem::readTextFile(filePath);
-        if (content.length() == 0) {
-            Serial.print("Failed to read JS file: ");
-            Serial.println(filePath);
-            duk_destroy_heap(ctx);
-            ctx = nullptr;
-            return;
-        }
-
-        duk_push_string(ctx, filePath);
-        duk_int_t rc = duk_pcompile_string_filename(ctx, 0, content.c_str());
-        if (rc != 0) {
-            checkJSError(ctx, rc);
-            duk_destroy_heap(ctx);
-            ctx = nullptr;
-            return;
-        }
-    } // `content` String is destroyed here, freeing 50KB+ of RAM before the app runs
-
-    duk_int_t rc = duk_pcall(ctx, 0);
-    checkJSError(ctx, rc);
-    
-    // Destroy heap after app exits to free RAM
-    duk_destroy_heap(ctx);
-    ctx = nullptr;
-}
-
 // Writer callback para lua_dump
 int luaDumpWriter(lua_State* L, const void* p, size_t sz, void* ud) {
     LuaDumpBuffer* buf = (LuaDumpBuffer*)ud;
@@ -659,221 +585,299 @@ bool executeBytecode(lua_State* L, const char* luacPath) {
     return true;
 }
 
-// Função principal
-void HarixKernel::runLuaFile(const char* filePath) {
-    if (L) {
-        lua_close(L);
-        L = nullptr;
-    }
+HarixKernel::Engine HarixKernel::detectEngine(const String& filePath)
+{
+    if (filePath.endsWith(".lua") || filePath.endsWith(".luac"))
+        return Engine::Lua;
 
-    L = lua_newstate(my_lua_alloc, nullptr);
-    if (!L) {
-        Serial.println("Failed to create Lua state for app.");
-        tft.fillScreen(TFT_RED);
-        tft.setTextColor(TFT_WHITE, TFT_RED);
-        tft.drawString("Out Of Ram Error", 10, 20, 4);
-        tft.drawString("Please turn off WiFi in", 10, 60, 2);
-        tft.drawString("setting to free the ram", 10, 80, 2);
-        tft.drawString("and make this app running", 10, 100, 2);
-        
-        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-        tft.setTextColor(TFT_RED, TFT_WHITE);
-        tft.drawString("X", 215, 8, 2);
-        
-        uint16_t tx, ty;
-        while(true) {
-            if (getTouch(&tx, &ty)) {
-                if (tx >= 200 && ty <= 40) break;
-            }
-            BoardKey key = getKeyInput();
-            if (key == BOARD_KEY_ESC) {
-                break;
-            }
-            delay(50);
-        }
-        return;
-    }
+    if (filePath.endsWith(".wren"))
+        return Engine::Wren;
 
-    luaL_openlibs(L);
-    lua_atpanic(L, my_lua_panic);
-    LuaBindings::init(L);
-    
-    // Determina caminhos
-    String luaPath = String(filePath);
-    String luacPath;
-    
-    // Converte entre .lua e .luac
-    if (luaPath.endsWith(".luac")) {
-        luacPath = luaPath;
-        luaPath = luacPath.substring(0, luacPath.length() - 5) + ".lua";
-    } else if (luaPath.endsWith(".lua")) {
-        int lastDotLua = luaPath.lastIndexOf(".lua");
-        luacPath = luaPath.substring(0, lastDotLua) + ".luac";
-    } else {
-        Serial.println("Invalid file extension");
-        lua_close(L);
-        L = nullptr;
-        return;
-    }
-    
-    Serial.print("Lua source: ");
-    Serial.println(luaPath);
-    Serial.print("Lua bytecode: ");
-    Serial.println(luacPath);
-    
-    // Verifica o que existe
-    bool hasLua = FileSystem::exists(luaPath.c_str());
-    bool hasLuac = FileSystem::exists(luacPath.c_str());
-    
-    Serial.print("Has .lua: ");
-    Serial.println(hasLua ? "YES" : "NO");
-    Serial.print("Has .luac: ");
-    Serial.println(hasLuac ? "YES" : "NO");
-    
-    if (!hasLua && !hasLuac) {
-        Serial.println("No Lua files found!");
-        lua_close(L);
-        L = nullptr;
-        return;
-    }
-    
-    int rc = LUA_OK;
-    bool loaded = false;
-    
-    if (hasLuac && !hasLua) {
-        // CASO 1: Só tem bytecode
-        Serial.println("Loading bytecode directly...");
-        loaded = executeBytecode(L, luacPath.c_str());
-        
-    } else if (hasLua && !hasLuac) {
-        // CASO 2: Só tem fonte
-        Serial.println("Compiling source...");
-        if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str())) {
-            loaded = executeBytecode(L, luacPath.c_str());
-        } else {
-            Serial.println("Falling back to source execution");
-            String content = FileSystem::readTextFile(luaPath.c_str());
-            if (content.length() > 0) {
-                rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
-                loaded = (rc == LUA_OK);
-            }
+    if (filePath.endsWith(".js"))
+        return Engine::Duktape;
+
+    return Engine::Unknown;
+}
+
+static void showOutOfRamError(const char* engineName)
+{
+    Serial.print("Failed to create ");
+    Serial.print(engineName);
+    Serial.println(" state/heap for app.");
+
+    tft.fillScreen(TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.drawString("Out Of Ram Error", 10, 20, 4);
+    tft.drawString("Please turn off WiFi in", 10, 60, 2);
+    tft.drawString("setting to free the ram", 10, 80, 2);
+    tft.drawString("and make this app running", 10, 100, 2);
+
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_RED, TFT_WHITE);
+    tft.drawString("X", 215, 8, 2);
+
+    uint16_t tx, ty;
+    while (true)
+    {
+        if (getTouch(&tx, &ty))
+        {
+            if (tx >= 200 && ty <= 40) break;
         }
-        
-    } else {
-        // CASO 3: Ambos existem
-        if (needsRecompile(luaPath.c_str(), luacPath.c_str())) {
-            Serial.println("Source changed, recompiling...");
-            if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str())) {
-                loaded = executeBytecode(L, luacPath.c_str());
-            } else {
-                Serial.println("Falling back to source execution");
-                String content = FileSystem::readTextFile(luaPath.c_str());
-                if (content.length() > 0) {
-                    rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
-                    loaded = (rc == LUA_OK);
-                }
-            }
-        } else {
-            Serial.println("Using cached bytecode");
-            loaded = executeBytecode(L, luacPath.c_str());
-        }
+
+        BoardKey key = getKeyInput();
+        if (key == BOARD_KEY_ESC) break;
+
+        delay(50);
     }
-    
-    if (!loaded) {
-        if (rc != LUA_OK) {
-            checkLuaError(L, rc);
-        } else {
-            Serial.println("Failed to load script");
-        }
-        lua_close(L);
-        L = nullptr;
-        return;
+}
+
+void HarixKernel::runFile(const char* filePath)
+{
+    String path(filePath);
+    Engine engine = detectEngine(path);
+
+    switch (engine)
+    {
+        case Engine::Lua:
+            Serial.print("[App] Lua: ");
+            Serial.println(path);
+            runLuaFile(filePath);
+            break;
+
+        case Engine::Wren:
+            Serial.print("[App] Wren: ");
+            Serial.println(path);
+            runWrenFile(filePath);
+            break;
+
+        case Engine::Duktape:
+            Serial.print("[App] JavaScript: ");
+            Serial.println(path);
+            runJsFile(filePath);
+            break;
+
+        default:
+            Serial.print("[App] Unknown file type: ");
+            Serial.println(path);
+            break;
     }
-    
-    // Executa o chunk carregado
-    rc = lua_pcall(L, 0, LUA_MULTRET, 0);
-    checkLuaError(L, rc);
-    
-    // Destrói o estado após o app fechar
-    lua_close(L);
-    L = nullptr;
 }
 
 void HarixKernel::runWrenFile(const char* filePath)
 {
-    // =====================================================
-    // Read Wren file
-    // =====================================================
-
-    String content =
-        FileSystem::readTextFile(filePath);
+    String content = FileSystem::readTextFile(filePath);
 
     if (content.length() == 0)
     {
-        Serial.print(
-            "Failed to read Wren file: "
-        );
-
+        Serial.print("Failed to read Wren file: ");
         Serial.println(filePath);
-
         return;
     }
 
-    // =====================================================
-    // Build source
-    // =====================================================
-
     String source;
-
-    source.reserve(
-        strlen(HARIX_WREN_API_SOURCE) +
-        content.length() +
-        2
-    );
-
+    source.reserve(strlen(HARIX_WREN_API_SOURCE) + content.length() + 2);
     source += HARIX_WREN_API_SOURCE;
     source += "\n";
     source += content;
 
-
-    // =====================================================
-    // Initialize Wren
-    // =====================================================
-
-    if (!WrenRuntime::begin())
-    {
-        Serial.println(
-            "[Wren] Failed to initialize VM"
-        );
-
-        return;
-    }
-
-
-    // =====================================================
-    // Execute
-    // =====================================================
-
-    
     int apiLines = 0;
-
     for (const char* p = HARIX_WREN_API_SOURCE; *p; p++)
-    {
-        if (*p == '\n')
-            apiLines++;
-    }
-
+        if (*p == '\n') apiLines++;
     apiLines++;
 
-    WrenRuntime::execute(
-        source.c_str(),
-        apiLines
-    );
+    EngineTaskRunner::run("wren_run", kWrenTaskStackSize, [source, apiLines]()
+    {
+        if (!WrenRuntime::begin())
+        {
+            showOutOfRamError("Wren");
+            return;
+        }
 
+        WrenBindings::clearErrors();
+        WrenRuntime::execute(source.c_str(), apiLines);
+        WrenRuntime::shutdown();
+    });
+}
 
-    // =====================================================
-    // Destroy VM
-    // =====================================================
+void HarixKernel::runJsFile(const char* filePath)
+{
+    String path(filePath);
 
-    WrenRuntime::shutdown();
+    EngineTaskRunner::run("js_run", kJsTaskStackSize, [path]()
+    {
+        if (ctx)
+        {
+            duk_destroy_heap(ctx);
+            ctx = nullptr;
+        }
+
+        ctx = duk_create_heap(my_alloc, my_realloc, my_free, nullptr, my_fatal);
+
+        if (!ctx)
+        {
+            showOutOfRamError("Duktape");
+            return; // Soft exit back to OS
+        }
+
+        JSBindings::init(ctx);
+
+        {
+            String content = FileSystem::readTextFile(path.c_str());
+
+            if (content.length() == 0)
+            {
+                Serial.print("Failed to read JS file: ");
+                Serial.println(path);
+                duk_destroy_heap(ctx);
+                ctx = nullptr;
+                return;
+            }
+
+            duk_push_string(ctx, path.c_str());
+            duk_int_t rc = duk_pcompile_string_filename(ctx, 0, content.c_str());
+
+            if (rc != 0)
+            {
+                checkJSError(ctx, rc);
+                duk_destroy_heap(ctx);
+                ctx = nullptr;
+                return;
+            }
+        } // `content` sai de escopo aqui, liberando RAM antes do app rodar
+
+        duk_int_t rc = duk_pcall(ctx, 0);
+        checkJSError(ctx, rc);
+
+        duk_destroy_heap(ctx);
+        ctx = nullptr;
+    });
+}
+
+void HarixKernel::runLuaFile(const char* filePath)
+{
+    String path(filePath);
+
+    EngineTaskRunner::run("lua_run", kLuaTaskStackSize, [path]()
+    {
+        if (L)
+        {
+            lua_close(L);
+            L = nullptr;
+        }
+
+        L = lua_newstate(my_lua_alloc, nullptr);
+        if (!L)
+        {
+            showOutOfRamError("Lua");
+            return;
+        }
+
+        luaL_openlibs(L);
+        lua_atpanic(L, my_lua_panic);
+        LuaBindings::init(L);
+
+        String luaPath = path;
+        String luacPath;
+
+        if (luaPath.endsWith(".luac"))
+        {
+            luacPath = luaPath;
+            luaPath = luacPath.substring(0, luacPath.length() - 5) + ".lua";
+        }
+        else if (luaPath.endsWith(".lua"))
+        {
+            int lastDotLua = luaPath.lastIndexOf(".lua");
+            luacPath = luaPath.substring(0, lastDotLua) + ".luac";
+        }
+        else
+        {
+            Serial.println("Invalid file extension");
+            lua_close(L);
+            L = nullptr;
+            return;
+        }
+
+        Serial.print("Lua source: ");
+        Serial.println(luaPath);
+        Serial.print("Lua bytecode: ");
+        Serial.println(luacPath);
+
+        bool hasLua = FileSystem::exists(luaPath.c_str());
+        bool hasLuac = FileSystem::exists(luacPath.c_str());
+
+        Serial.print("Has .lua: ");
+        Serial.println(hasLua ? "YES" : "NO");
+        Serial.print("Has .luac: ");
+        Serial.println(hasLuac ? "YES" : "NO");
+
+        if (!hasLua && !hasLuac)
+        {
+            Serial.println("No Lua files found!");
+            lua_close(L);
+            L = nullptr;
+            return;
+        }
+
+        int rc = LUA_OK;
+        bool loaded = false;
+
+        auto fallbackToSource = [&]()
+        {
+            Serial.println("Falling back to source execution");
+            String content = FileSystem::readTextFile(luaPath.c_str());
+            if (content.length() > 0)
+            {
+                rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
+                loaded = (rc == LUA_OK);
+            }
+        };
+
+        if (hasLuac && !hasLua)
+        {
+            Serial.println("Loading bytecode directly...");
+            loaded = executeBytecode(L, luacPath.c_str());
+        }
+        else if (hasLua && !hasLuac)
+        {
+            Serial.println("Compiling source...");
+            if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str()))
+                loaded = executeBytecode(L, luacPath.c_str());
+            else
+                fallbackToSource();
+        }
+        else
+        {
+            if (needsRecompile(luaPath.c_str(), luacPath.c_str()))
+            {
+                Serial.println("Source changed, recompiling...");
+                if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str()))
+                    loaded = executeBytecode(L, luacPath.c_str());
+                else
+                    fallbackToSource();
+            }
+            else
+            {
+                Serial.println("Using cached bytecode");
+                loaded = executeBytecode(L, luacPath.c_str());
+            }
+        }
+
+        if (!loaded)
+        {
+            if (rc != LUA_OK)
+                checkLuaError(L, rc);
+            else
+                Serial.println("Failed to load script");
+
+            lua_close(L);
+            L = nullptr;
+            return;
+        }
+
+        rc = lua_pcall(L, 0, LUA_MULTRET, 0);
+        checkLuaError(L, rc);
+
+        lua_close(L);
+        L = nullptr;
+    });
 }

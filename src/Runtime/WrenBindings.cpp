@@ -11,7 +11,7 @@
 
 TFT_eSprite* WrenBindings::tftSprite = nullptr;
 bool WrenBindings::useSprite = false;
-
+std::vector<String> WrenBindings::errorLines;
 
 // =====================================================
 // Initialization
@@ -23,6 +23,201 @@ void WrenBindings::init(WrenVM* vm)
         return;
 
     Serial.println("[WrenBindings] Initialized");
+}
+
+// =====================================================
+// clearErrors
+// =====================================================
+
+void WrenBindings::clearErrors()
+{
+    errorLines.clear();
+}
+
+
+// =====================================================
+// wrapText
+//
+// Quebra `text` em linhas que cabem em `maxWidth` pixels,
+// quebrando por palavra. Precisa que a fonte já esteja
+// setada em `gfx` antes de chamar (usa textWidth()).
+// =====================================================
+
+template <typename T>
+std::vector<String> WrenBindings::wrapText(
+    T* gfx,
+    const String& text,
+    int maxWidth
+)
+{
+    std::vector<String> lines;
+
+    String current;
+    int wstart = 0;
+
+    while (wstart <= (int)text.length())
+    {
+        int space = text.indexOf(' ', wstart);
+
+        String word = (space == -1)
+            ? text.substring(wstart)
+            : text.substring(wstart, space);
+
+        String candidate = current.length()
+            ? current + " " + word
+            : word;
+
+        if (gfx->textWidth(candidate) > maxWidth && current.length() > 0)
+        {
+            lines.push_back(current);
+            current = word;
+        }
+        else
+        {
+            current = candidate;
+        }
+
+        if (space == -1)
+            break;
+
+        wstart = space + 1;
+    }
+
+    if (current.length() || lines.empty())
+        lines.push_back(current);
+
+    return lines;
+}
+
+
+// =====================================================
+// drawErrorScreen
+//
+// Acumula a mensagem nova em `errorLines` (com wrap) e
+// redesenha a tela inteira a partir do buffer, mostrando
+// só as últimas linhas que cabem (scroll).
+// =====================================================
+
+template <typename T>
+void WrenBindings::drawErrorScreen(
+    T* gfx,
+    const char* title,
+    const char* message
+)
+{
+    const int screenW = gfx->width();
+    const int screenH = gfx->height();
+
+    const int marginX = 5;
+    int cursorY = 5;
+
+
+    // =====================================================
+    // Medidas de fonte
+    // =====================================================
+
+    gfx->setTextFont(2);
+    const int titleHeight = gfx->fontHeight() + 4;
+
+    gfx->setTextFont(1);
+    const int lineHeight = gfx->fontHeight() + 2;
+    const int maxLines = (screenH - titleHeight - 10) / lineHeight;
+
+
+    // =====================================================
+    // Acumula nova mensagem no buffer (com debounce)
+    // =====================================================
+
+    if (message)
+    {
+        String tagged;
+        tagged += "[";
+        tagged += (title ? title : "Error");
+        tagged += "] ";
+        tagged += message;
+
+        bool isDuplicate =
+            !errorLines.empty() &&
+            errorLines.back() == tagged;
+
+        if (!isDuplicate)
+        {
+            for (auto& l : wrapText(gfx, tagged, screenW - marginX * 2))
+            {
+                errorLines.push_back(l);
+            }
+
+            constexpr size_t kMaxLines = 60;
+
+            while (errorLines.size() > kMaxLines)
+            {
+                errorLines.erase(errorLines.begin());
+            }
+        }
+    }
+
+
+    // =====================================================
+    // Redesenha tudo (fillScreen só acontece aqui, uma vez
+    // por chamada, não uma vez por linha)
+    // =====================================================
+
+    gfx->fillScreen(TFT_RED);
+    gfx->setTextColor(TFT_WHITE, TFT_RED);
+
+    gfx->setTextFont(2);
+    gfx->drawString(
+        title ? title : "WREN ERROR",
+        marginX,
+        cursorY
+    );
+    cursorY += titleHeight;
+
+    gfx->setTextFont(1);
+
+    int total = (int)errorLines.size();
+    int firstIdx = (total > maxLines) ? (total - maxLines) : 0;
+
+    for (int i = firstIdx; i < total; i++)
+    {
+        gfx->drawString(errorLines[i], marginX, cursorY);
+        cursorY += lineHeight;
+    }
+}
+
+
+// =====================================================
+// showError
+// =====================================================
+
+void WrenBindings::showError(
+    const char* title,
+    const char* message
+)
+{
+    // =====================================================
+    // Serial
+    // =====================================================
+
+    Serial.print("[Wren] ");
+    Serial.print(title ? title : "Error");
+    Serial.print(": ");
+    Serial.println(message ? message : "no message");
+
+
+    // =====================================================
+    // Display
+    // =====================================================
+
+    if (useSprite && tftSprite)
+    {
+        drawErrorScreen(tftSprite, title, message);
+        tftSprite->pushSprite(0, 0);
+    }
+    else
+    {
+        drawErrorScreen(&tft, title, message);
+    }
 }
 
 
@@ -1666,83 +1861,6 @@ void WrenBindings::prompt(WrenVM* vm)
         0,
         result.c_str()
     );
-}
-
-// =====================================================
-// Error
-// =====================================================
-
-void WrenBindings::showError(
-    const char* title,
-    const char* message
-)
-{
-    // =====================================================
-    // Serial
-    // =====================================================
-
-    Serial.print("[Wren] ");
-    Serial.print(title ? title : "Error");
-    Serial.print(": ");
-    Serial.println(message ? message : "no message");
-
-
-    // =====================================================
-    // Display
-    // =====================================================
-
-    if (useSprite && tftSprite)
-    {
-        tftSprite->fillScreen(TFT_RED);
-
-        tftSprite->setTextColor(
-            TFT_WHITE,
-            TFT_RED
-        );
-
-        tftSprite->drawString(
-            title ? title : "WREN ERROR",
-            5,
-            5,
-            2
-        );
-
-        if (message)
-        {
-            tftSprite->drawString(
-                message,
-                5,
-                30,
-                1
-            );
-        }
-    }
-    else
-    {
-        tft.fillScreen(TFT_RED);
-
-        tft.setTextColor(
-            TFT_WHITE,
-            TFT_RED
-        );
-
-        tft.drawString(
-            title ? title : "WREN ERROR",
-            5,
-            5,
-            2
-        );
-
-        if (message)
-        {
-            tft.drawString(
-                message,
-                5,
-                30,
-                1
-            );
-        }
-    }
 }
 
 // =====================================================
