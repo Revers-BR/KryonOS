@@ -1001,49 +1001,13 @@ duk_ret_t JSBindings::js_prompt(duk_context *ctx) {
 
 void JSBindings::init(duk_context *ctx) {
 
-    // --- System Object ---
+    // --- Display Object ---
     duk_push_global_object(ctx);
-    duk_push_object(ctx); // System
-
-    // System.gpio sub-object
+    
+    // Display object
     duk_push_object(ctx);
-    duk_push_c_function(ctx, js_pinMode, 2);
-    duk_put_prop_string(ctx, -2, "pinMode");
-    duk_push_c_function(ctx, js_digitalWrite, 2);
-    duk_put_prop_string(ctx, -2, "digitalWrite");
-    duk_push_c_function(ctx, js_digitalRead, 1);
-    duk_put_prop_string(ctx, -2, "digitalRead");
-    duk_push_c_function(ctx, js_analogRead, 1);
-    duk_put_prop_string(ctx, -2, "analogRead");
-    duk_push_c_function(ctx, js_analogWrite, 2);
-    duk_put_prop_string(ctx, -2, "analogWrite");
-    duk_push_c_function(ctx, js_pulseIn, 3); // max 3 args
-    duk_put_prop_string(ctx, -2, "pulseIn");
     
-    // GPIO Constants
-    duk_push_int(ctx, OUTPUT); duk_put_prop_string(ctx, -2, "OUTPUT");
-    duk_push_int(ctx, INPUT); duk_put_prop_string(ctx, -2, "INPUT");
-    duk_push_int(ctx, INPUT_PULLUP); duk_put_prop_string(ctx, -2, "INPUT_PULLUP");
-    duk_push_int(ctx, HIGH); duk_put_prop_string(ctx, -2, "HIGH");
-    duk_push_int(ctx, LOW); duk_put_prop_string(ctx, -2, "LOW");
-    
-    duk_put_prop_string(ctx, -2, "gpio");
-
-    // --- Drawing Primitives ---
-
-    duk_push_c_function(ctx, js_createSprite, 2);
-    duk_put_prop_string(ctx, -2, "createSprite");
-    duk_push_c_function(ctx, js_deleteSprite, 0);
-    duk_put_prop_string(ctx, -2, "deleteSprite");
-    duk_push_c_function(ctx, js_pushSprite, 2);
-    duk_put_prop_string(ctx, -2, "pushSprite");
-    duk_push_c_function(ctx, js_bindSprite, 1);
-    duk_put_prop_string(ctx, -2, "bindSprite");
-    duk_push_c_function(ctx, js_drawFastVLine, 4);
-    duk_put_prop_string(ctx, -2, "drawFastVLine");
-    duk_push_c_function(ctx, js_drawFastHLine, 4);
-    duk_put_prop_string(ctx, -2, "drawFastHLine");
-
+    // Drawing Primitives
     duk_push_c_function(ctx, js_fillScreen, 1);
     duk_put_prop_string(ctx, -2, "fillScreen");
     duk_push_c_function(ctx, js_fillRect, 5);
@@ -1066,46 +1030,89 @@ void JSBindings::init(duk_context *ctx) {
     duk_put_prop_string(ctx, -2, "drawRoundRect");
     duk_push_c_function(ctx, js_fillRoundRect, 6);
     duk_put_prop_string(ctx, -2, "fillRoundRect");
-    
     duk_push_c_function(ctx, js_drawBMP, 3);
     duk_put_prop_string(ctx, -2, "drawBMP");
-
-    // --- Text ---
+    
+    // Text
     duk_push_c_function(ctx, js_drawString, 4);
     duk_put_prop_string(ctx, -2, "drawString");
     duk_push_c_function(ctx, js_setTextColor, 2);
     duk_put_prop_string(ctx, -2, "setTextColor");
     duk_push_c_function(ctx, js_setTextSize, 1);
     duk_put_prop_string(ctx, -2, "setTextSize");
-
-    // --- Utility ---
+    
+    // Utility
     duk_push_c_function(ctx, js_color, 3);
     duk_put_prop_string(ctx, -2, "color");
     duk_push_c_function(ctx, js_screenWidth, 0);
     duk_put_prop_string(ctx, -2, "screenWidth");
     duk_push_c_function(ctx, js_screenHeight, 0);
     duk_put_prop_string(ctx, -2, "screenHeight");
+    
+    duk_put_prop_string(ctx, -2, "Display");
 
-    // --- Keyboard Input ---
-    // 1. Registra getKey()
+    // --- Sprite Object ---
+    duk_push_object(ctx);
+    
+    duk_push_c_function(ctx, js_createSprite, 2);
+    duk_put_prop_string(ctx, -2, "create");
+    duk_push_c_function(ctx, js_deleteSprite, 0);
+    duk_put_prop_string(ctx, -2, "delete");
+    duk_push_c_function(ctx, js_pushSprite, 2);
+    duk_put_prop_string(ctx, -2, "push");
+    duk_push_c_function(ctx, js_bindSprite, 1);
+    duk_put_prop_string(ctx, -2, "bind");
+    duk_push_c_function(ctx, js_drawFastVLine, 4);
+    duk_put_prop_string(ctx, -2, "drawFastVLine");
+    duk_push_c_function(ctx, js_drawFastHLine, 4);
+    duk_put_prop_string(ctx, -2, "drawFastHLine");
+    
+    duk_put_prop_string(ctx, -2, "Sprite");
+
+    // --- GPIO Object ---
+    duk_push_object(ctx);
+    
+    duk_push_c_function(ctx, js_pinMode, 2);
+    duk_put_prop_string(ctx, -2, "pinMode");
+    duk_push_c_function(ctx, js_digitalWrite, 2);
+    duk_put_prop_string(ctx, -2, "digitalWrite");
+    duk_push_c_function(ctx, js_digitalRead, 1);
+    duk_put_prop_string(ctx, -2, "digitalRead");
+    duk_push_c_function(ctx, js_analogRead, 1);
+    duk_put_prop_string(ctx, -2, "analogRead");
+    duk_push_c_function(ctx, js_analogWrite, 2);
+    duk_put_prop_string(ctx, -2, "analogWrite");
+    duk_push_c_function(ctx, js_pulseIn, 3);
+    duk_put_prop_string(ctx, -2, "pulseIn");
+    
+    // GPIO Constants
+    duk_push_int(ctx, OUTPUT); duk_put_prop_string(ctx, -2, "OUTPUT");
+    duk_push_int(ctx, INPUT); duk_put_prop_string(ctx, -2, "INPUT");
+    duk_push_int(ctx, INPUT_PULLUP); duk_put_prop_string(ctx, -2, "INPUT_PULLUP");
+    duk_push_int(ctx, HIGH); duk_put_prop_string(ctx, -2, "HIGH");
+    duk_push_int(ctx, LOW); duk_put_prop_string(ctx, -2, "LOW");
+    
+    duk_put_prop_string(ctx, -2, "GPIO");
+
+    // --- Input Object ---
+    duk_push_object(ctx);
+    
     duk_push_c_function(ctx, JSBindings::js_getKey, 0);
     duk_put_prop_string(ctx, -2, "getKey");
-
-    // 2. Registra getKeyInput()
     duk_push_c_function(ctx, JSBindings::js_getKeyInput, 0);
     duk_put_prop_string(ctx, -2, "getKeyInput");
-
-    // 3. Registra isKeyPressed(keyName) -> 1 argumento
     duk_push_c_function(ctx, JSBindings::js_isKeyPressed, 1);
     duk_put_prop_string(ctx, -2, "isKeyPressed");
-
-    // Registra getChar()
     duk_push_c_function(ctx, JSBindings::js_getChar, 0);
     duk_put_prop_string(ctx, -2, "getChar");
-
-    // --- Touch Input ---
     duk_push_c_function(ctx, js_getTouch, 0);
     duk_put_prop_string(ctx, -2, "getTouch");
+    
+    duk_put_prop_string(ctx, -2, "Input");
+
+    // --- Harix Object (System) ---
+    duk_push_object(ctx);
+    
     duk_push_c_function(ctx, js_millis, 0);
     duk_put_prop_string(ctx, -2, "millis");
     duk_push_c_function(ctx, js_micros, 0);
@@ -1139,28 +1146,34 @@ void JSBindings::init(duk_context *ctx) {
     duk_put_prop_string(ctx, -2, "getDay");
     duk_push_c_function(ctx, js_getTimezone, 0);
     duk_put_prop_string(ctx, -2, "getTimezone");
-
     duk_push_c_function(ctx, js_getOSVersion, 0);
     duk_put_prop_string(ctx, -2, "getOSVersion");
-
     duk_push_c_function(ctx, js_getAPILevel, 0);
     duk_put_prop_string(ctx, -2, "getAPILevel");
+    
+    duk_put_prop_string(ctx, -2, "Harix");
 
+    // --- Network Object ---
+    duk_push_object(ctx);
+    
     duk_push_c_function(ctx, js_getIPAddress, 0);
     duk_put_prop_string(ctx, -2, "getIPAddress");
-
     duk_push_c_function(ctx, js_isWiFiActive, 0);
     duk_put_prop_string(ctx, -2, "isWiFiActive");
+    
+    duk_put_prop_string(ctx, -2, "Network");
 
-    // --- Keyboard ---
+    // --- Keyboard Object ---
+    duk_push_object(ctx);
+    
     duk_push_c_function(ctx, js_prompt, 2);
     duk_put_prop_string(ctx, -2, "prompt");
+    
+    duk_put_prop_string(ctx, -2, "Keyboard");
 
-    // Assign to global variable 'System'
-    duk_put_prop_string(ctx, -2, "System");
-
-    // --- FS Object ---
-    duk_push_object(ctx); // FS
+    // --- FileSystem Object ---
+    duk_push_object(ctx);
+    
     duk_push_c_function(ctx, js_readTextFile, 1);
     duk_put_prop_string(ctx, -2, "readTextFile");
     duk_push_c_function(ctx, js_writeTextFile, 2);
@@ -1172,7 +1185,7 @@ void JSBindings::init(duk_context *ctx) {
     duk_push_c_function(ctx, js_renameFile, 2);
     duk_put_prop_string(ctx, -2, "renameFile");
     duk_push_c_function(ctx, js_fileExists, 1);
-    duk_put_prop_string(ctx, -2, "exists");
+    duk_put_prop_string(ctx, -2, "fileExists");
     duk_push_c_function(ctx, js_listDir, 1);
     duk_put_prop_string(ctx, -2, "listDir");
     duk_push_c_function(ctx, js_mkdir, 1);
@@ -1198,11 +1211,9 @@ void JSBindings::init(duk_context *ctx) {
     duk_push_c_function(ctx, js_unmountSD, 0);
     duk_put_prop_string(ctx, -2, "unmountSD");
     
-    // Assign to global variable 'FS'
-    duk_put_prop_string(ctx, -2, "FS");
+    duk_put_prop_string(ctx, -2, "FileSystem");
 
     // --- Color Constants on global scope ---
-    // Common TFT colors so JS apps don't need hex
     duk_push_uint(ctx, TFT_BLACK);   duk_put_prop_string(ctx, -2, "BLACK");
     duk_push_uint(ctx, TFT_WHITE);   duk_put_prop_string(ctx, -2, "WHITE");
     duk_push_uint(ctx, TFT_RED);     duk_put_prop_string(ctx, -2, "RED");
@@ -1214,12 +1225,13 @@ void JSBindings::init(duk_context *ctx) {
     duk_push_uint(ctx, TFT_ORANGE);  duk_put_prop_string(ctx, -2, "ORANGE");
     duk_push_uint(ctx, TFT_DARKGREY);duk_put_prop_string(ctx, -2, "DARKGREY");
 
-    duk_push_int(ctx, BOARD_KEY_UP);    duk_put_prop_string(ctx, -2, "BOARD_KEY_UP");    // 1
-    duk_push_int(ctx, BOARD_KEY_DOWN);  duk_put_prop_string(ctx, -2, "BOARD_KEY_DOWN");  // 2
-    duk_push_int(ctx, BOARD_KEY_LEFT);  duk_put_prop_string(ctx, -2, "BOARD_KEY_LEFT");  // 3
-    duk_push_int(ctx, BOARD_KEY_RIGHT); duk_put_prop_string(ctx, -2, "BOARD_KEY_RIGHT"); // 4
-    duk_push_int(ctx, BOARD_KEY_ENTER); duk_put_prop_string(ctx, -2, "BOARD_KEY_ENTER"); // 5
-    duk_push_int(ctx, BOARD_KEY_SPACE); duk_put_prop_string(ctx, -2, "BOARD_KEY_SPACE"); // 8
+    // Keyboard constants
+    duk_push_int(ctx, BOARD_KEY_UP);    duk_put_prop_string(ctx, -2, "BOARD_KEY_UP");
+    duk_push_int(ctx, BOARD_KEY_DOWN);  duk_put_prop_string(ctx, -2, "BOARD_KEY_DOWN");
+    duk_push_int(ctx, BOARD_KEY_LEFT);  duk_put_prop_string(ctx, -2, "BOARD_KEY_LEFT");
+    duk_push_int(ctx, BOARD_KEY_RIGHT); duk_put_prop_string(ctx, -2, "BOARD_KEY_RIGHT");
+    duk_push_int(ctx, BOARD_KEY_ENTER); duk_put_prop_string(ctx, -2, "BOARD_KEY_ENTER");
+    duk_push_int(ctx, BOARD_KEY_SPACE); duk_put_prop_string(ctx, -2, "BOARD_KEY_SPACE");
 
     duk_pop(ctx); // pop global object
 }

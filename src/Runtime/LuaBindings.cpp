@@ -12,27 +12,11 @@ TFT_eSprite* LuaBindings::tftSprite = nullptr;
 bool LuaBindings::useSprite = false;
 
 void LuaBindings::init(lua_State *L) {
-    // --- System Object ---
+    
+    // --- Display Object ---
     lua_newtable(L);
-
-        // System.gpio sub-table (Mocada)
-        lua_newtable(L);
-        lua_pushcfunction(L, lua_pinMode);        lua_setfield(L, -2, "pinMode");
-        lua_pushcfunction(L, lua_digitalWrite);   lua_setfield(L, -2, "digitalWrite");
-        lua_pushcfunction(L, lua_digitalRead);    lua_setfield(L, -2, "digitalRead");
-        lua_pushcfunction(L, lua_analogRead);     lua_setfield(L, -2, "analogRead");
-        lua_pushcfunction(L, lua_analogWrite);    lua_setfield(L, -2, "analogWrite");
-        lua_pushcfunction(L, lua_pulseIn);        lua_setfield(L, -2, "pulseIn");
-        
-        lua_setfield(L, -2, "gpio");
-
-    // --- Drawing Primitives (Mocadas / Essenciais) ---
-    lua_pushcfunction(L, lua_createSprite);    lua_setfield(L, -2, "createSprite");
-    lua_pushcfunction(L, lua_deleteSprite);    lua_setfield(L, -2, "deleteSprite");
-    lua_pushcfunction(L, lua_pushSprite);      lua_setfield(L, -2, "pushSprite");
-    lua_pushcfunction(L, lua_bindSprite);      lua_setfield(L, -2, "bindSprite");
-    lua_pushcfunction(L, lua_drawFastVLine);   lua_setfield(L, -2, "drawFastVLine");
-    lua_pushcfunction(L, lua_drawFastHLine);   lua_setfield(L, -2, "drawFastHLine");
+    
+    // Drawing Primitives
     lua_pushcfunction(L, lua_fillScreen);      lua_setfield(L, -2, "fillScreen");
     lua_pushcfunction(L, lua_fillRect);        lua_setfield(L, -2, "fillRect");
     lua_pushcfunction(L, lua_drawRect);        lua_setfield(L, -2, "drawRect");
@@ -45,16 +29,64 @@ void LuaBindings::init(lua_State *L) {
     lua_pushcfunction(L, lua_drawRoundRect);   lua_setfield(L, -2, "drawRoundRect");
     lua_pushcfunction(L, lua_fillRoundRect);   lua_setfield(L, -2, "fillRoundRect");
     lua_pushcfunction(L, lua_drawBMP);         lua_setfield(L, -2, "drawBMP");
-
-    // --- Text ---
+    
+    // Text
     lua_pushcfunction(L, lua_drawString);      lua_setfield(L, -2, "drawString");
     lua_pushcfunction(L, lua_setTextColor);    lua_setfield(L, -2, "setTextColor");
     lua_pushcfunction(L, lua_setTextSize);     lua_setfield(L, -2, "setTextSize");
-
-    // --- Utility & System ---
+    
+    // Utility
     lua_pushcfunction(L, lua_color);           lua_setfield(L, -2, "color");
     lua_pushcfunction(L, lua_screenWidth);     lua_setfield(L, -2, "screenWidth");
     lua_pushcfunction(L, lua_screenHeight);    lua_setfield(L, -2, "screenHeight");
+    
+    lua_setglobal(L, "Display");
+
+    // --- Sprite Object ---
+    lua_newtable(L);
+    
+    lua_pushcfunction(L, lua_createSprite);    lua_setfield(L, -2, "create");
+    lua_pushcfunction(L, lua_deleteSprite);    lua_setfield(L, -2, "delete");
+    lua_pushcfunction(L, lua_pushSprite);      lua_setfield(L, -2, "push");
+    lua_pushcfunction(L, lua_bindSprite);      lua_setfield(L, -2, "bind");
+    lua_pushcfunction(L, lua_drawFastVLine);   lua_setfield(L, -2, "drawFastVLine");
+    lua_pushcfunction(L, lua_drawFastHLine);   lua_setfield(L, -2, "drawFastHLine");
+    
+    lua_setglobal(L, "Sprite");
+
+    // --- GPIO Object ---
+    lua_newtable(L);
+    
+    lua_pushcfunction(L, lua_pinMode);        lua_setfield(L, -2, "pinMode");
+    lua_pushcfunction(L, lua_digitalWrite);   lua_setfield(L, -2, "digitalWrite");
+    lua_pushcfunction(L, lua_digitalRead);    lua_setfield(L, -2, "digitalRead");
+    lua_pushcfunction(L, lua_analogRead);     lua_setfield(L, -2, "analogRead");
+    lua_pushcfunction(L, lua_analogWrite);    lua_setfield(L, -2, "analogWrite");
+    lua_pushcfunction(L, lua_pulseIn);        lua_setfield(L, -2, "pulseIn");
+    
+    // GPIO Constants
+    lua_pushinteger(L, OUTPUT);       lua_setfield(L, -2, "OUTPUT");
+    lua_pushinteger(L, INPUT);        lua_setfield(L, -2, "INPUT");
+    lua_pushinteger(L, INPUT_PULLUP); lua_setfield(L, -2, "INPUT_PULLUP");
+    lua_pushinteger(L, HIGH);         lua_setfield(L, -2, "HIGH");
+    lua_pushinteger(L, LOW);          lua_setfield(L, -2, "LOW");
+    
+    lua_setglobal(L, "GPIO");
+
+    // --- Input Object ---
+    lua_newtable(L);
+    
+    lua_pushcfunction(L, lua_getKey);          lua_setfield(L, -2, "getKey");
+    lua_pushcfunction(L, lua_getKeyInput);     lua_setfield(L, -2, "getKeyInput");
+    lua_pushcfunction(L, lua_isKeyPressed);    lua_setfield(L, -2, "isKeyPressed");
+    lua_pushcfunction(L, lua_getChar);         lua_setfield(L, -2, "getChar");
+    lua_pushcfunction(L, lua_getTouch);        lua_setfield(L, -2, "getTouch");
+    
+    lua_setglobal(L, "Input");
+
+    // --- Harix Object (System) ---
+    lua_newtable(L);
+    
     lua_pushcfunction(L, lua_millis);          lua_setfield(L, -2, "millis");
     lua_pushcfunction(L, lua_micros);          lua_setfield(L, -2, "micros");
     lua_pushcfunction(L, lua_delay);           lua_setfield(L, -2, "delay");
@@ -64,16 +96,8 @@ void LuaBindings::init(lua_State *L) {
     lua_pushcfunction(L, lua_hasTemperatureSensor); lua_setfield(L, -2, "hasTemperatureSensor");
     lua_pushcfunction(L, lua_getInfo);         lua_setfield(L, -2, "getInfo");
     lua_pushcfunction(L, lua_restart);         lua_setfield(L, -2, "restart");
-
-    // --- Keyboard & Input ---
-    lua_pushcfunction(L, lua_getKey);          lua_setfield(L, -2, "getKey");
-    lua_pushcfunction(L, lua_getKeyInput);     lua_setfield(L, -2, "getKeyInput");
-    lua_pushcfunction(L, lua_isKeyPressed);    lua_setfield(L, -2, "isKeyPressed");
-    lua_pushcfunction(L, lua_getChar);         lua_setfield(L, -2, "getChar");
-    lua_pushcfunction(L, lua_getTouch);        lua_setfield(L, -2, "getTouch");
-    lua_pushcfunction(L, lua_prompt);          lua_setfield(L, -2, "prompt");
-
-    // --- Date & Time ---
+    
+    // Date & Time
     lua_pushcfunction(L, lua_getTime);         lua_setfield(L, -2, "getTime");
     lua_pushcfunction(L, lua_getSeconds);      lua_setfield(L, -2, "getSeconds");
     lua_pushcfunction(L, lua_getDate);         lua_setfield(L, -2, "getDate");
@@ -81,29 +105,42 @@ void LuaBindings::init(lua_State *L) {
     lua_pushcfunction(L, lua_getMonth);        lua_setfield(L, -2, "getMonth");
     lua_pushcfunction(L, lua_getDay);          lua_setfield(L, -2, "getDay");
     lua_pushcfunction(L, lua_getTimezone);     lua_setfield(L, -2, "getTimezone");
-
-    // --- OS / Network ---
+    
+    // OS
     lua_pushcfunction(L, lua_getOSVersion);    lua_setfield(L, -2, "getOSVersion");
     lua_pushcfunction(L, lua_getAPILevel);     lua_setfield(L, -2, "getAPILevel");
+    
+    lua_setglobal(L, "Harix");
+
+    // --- Network Object ---
+    lua_newtable(L);
+    
     lua_pushcfunction(L, lua_getIPAddress);    lua_setfield(L, -2, "getIPAddress");
     lua_pushcfunction(L, lua_isWiFiActive);    lua_setfield(L, -2, "isWiFiActive");
+    
+    lua_setglobal(L, "Network");
 
-    // Registra globalmente como 'System'
-    lua_setglobal(L, "System");
-
-    // --- FS Object (Mocado) ---
+    // --- Keyboard Object ---
     lua_newtable(L);
+    
+    lua_pushcfunction(L, lua_prompt);          lua_setfield(L, -2, "prompt");
+    
+    lua_setglobal(L, "Keyboard");
+
+    // --- FileSystem Object ---
+    lua_newtable(L);
+    
     lua_pushcfunction(L, lua_readTextFile);    lua_setfield(L, -2, "readTextFile");
     lua_pushcfunction(L, lua_writeTextFile);   lua_setfield(L, -2, "writeTextFile");
     lua_pushcfunction(L, lua_appendTextFile);  lua_setfield(L, -2, "appendTextFile");
 
-    // --- Binary Files --- 
+    // Binary Files
     lua_pushcfunction(L, lua_readBinaryFile);  lua_setfield(L, -2, "readBinaryFile"); 
     lua_pushcfunction(L, lua_writeBinaryFile); lua_setfield(L, -2, "writeBinaryFile");
     
     lua_pushcfunction(L, lua_deleteFile);      lua_setfield(L, -2, "deleteFile");
     lua_pushcfunction(L, lua_renameFile);      lua_setfield(L, -2, "renameFile");
-    lua_pushcfunction(L, lua_fileExists);      lua_setfield(L, -2, "exists");
+    lua_pushcfunction(L, lua_fileExists);      lua_setfield(L, -2, "fileExists");
     lua_pushcfunction(L, lua_listDir);         lua_setfield(L, -2, "listDir");
     lua_pushcfunction(L, lua_mkdir);           lua_setfield(L, -2, "mkdir");
     lua_pushcfunction(L, lua_rmdir);           lua_setfield(L, -2, "rmdir");
@@ -117,7 +154,7 @@ void LuaBindings::init(lua_State *L) {
     lua_pushcfunction(L, lua_mountSD);         lua_setfield(L, -2, "mountSD");
     lua_pushcfunction(L, lua_unmountSD);       lua_setfield(L, -2, "unmountSD");
     
-    lua_setglobal(L, "FS");
+    lua_setglobal(L, "FileSystem");
 }
 
 // ==========================================

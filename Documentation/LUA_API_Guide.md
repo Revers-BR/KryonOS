@@ -3,10 +3,12 @@
 **Context:** Embedded Lua 5.1 environment on ESP32 for KryonOS.
 
 **Runtime:** Lua 5.1
-**API Level:** 1
-**Global Namespaces:** `System` and `FS`
+**API Level:** 2
+**Global Namespaces:** `Display`, `Sprite`, `GPIO`, `Input`, `Keyboard`, `Harix`, `Network`, `FileSystem`
 
 > **Important:** Lua arrays/lists returned by KryonOS are **1-indexed**, following the standard Lua convention.
+
+> **Note:** Unlike earlier drafts of this document, the real binding does **not** expose a single `System` table or an `FS` table. Functions are split across several global tables that mirror the native `LuaBindings::init` registration (`Display`, `Sprite`, `GPIO`, `Input`, `Keyboard`, `Harix`, `Network`, `FileSystem`).
 
 ---
 
@@ -20,29 +22,29 @@ Recommended structure:
 
 ```lua
 while true do
-    local touch = System.getTouch()
-    local key = System.getKey()
-    local char = System.getChar()
+    local touch = Input.getTouch()
+    local key = Input.getKey()
+    local char = Input.getChar()
 
     -- Application logic
 
-    System.delay(10)
+    Harix.delay(10)
 end
 ```
 
 ## 1.1 Touchscreen Exit
 
-`System.getTouch()` must be polled continuously by applications using the touchscreen.
+`Input.getTouch()` must be polled continuously by applications using the touchscreen.
 
 The **top-right corner of the display is reserved for system/application exit**.
 
 Recommended detection:
 
 ```lua
-local touch = System.getTouch()
+local touch = Input.getTouch()
 
 if touch.touched and
-   touch.x >= System.screenWidth() - 40 and
+   touch.x >= Display.screenWidth() - 40 and
    touch.y <= 40 then
 
     break
@@ -55,12 +57,12 @@ The KryonOS kernel recognizes this region as an exit trigger.
 
 ## 1.2 Keyboard Exit
 
-`System.getKey()` provides keyboard/navigation state.
+`Input.getKey()` provides keyboard/navigation state.
 
 The `ESC` key is the standard keyboard application-exit action.
 
 ```lua
-local key = System.getKey()
+local key = Input.getKey()
 
 if key == "ESC" then
     break
@@ -71,15 +73,15 @@ end
 
 ## 1.3 Character Input
 
-`System.getChar()` provides character-oriented keyboard input.
+`Input.getChar()` provides character-oriented keyboard input.
 
-Use `System.getKey()` for navigation/system actions and `System.getChar()` for text input.
+Use `Input.getKey()` for navigation/system actions and `Input.getChar()` for text input.
 
 ```lua
-local char = System.getChar()
+local char = Input.getChar()
 
 if char ~= "" then
-    System.print(char)
+    Harix.print(char)
 end
 ```
 
@@ -90,7 +92,7 @@ end
 Long-running loops must periodically call:
 
 ```lua
-System.delay(10)
+Harix.delay(10)
 ```
 
 This prevents CPU starvation and allows the kernel to perform garbage collection.
@@ -109,15 +111,15 @@ Prefer:
 while true do
     -- Application logic
 
-    System.delay(10)
+    Harix.delay(10)
 end
 ```
 
 ---
 
-# 2. GRAPHICS & DISPLAY (`System.*`)
+# 2. GRAPHICS & DISPLAY (`Display.*`)
 
-## `System.fillScreen(color)`
+## `Display.fillScreen(color)`
 
 **Params:**
 
@@ -128,12 +130,12 @@ end
 **Description:** Fills the entire physical display or active sprite with the specified color.
 
 ```lua
-System.fillScreen(0x001F)
+Display.fillScreen(0x001F)
 ```
 
 ---
 
-## `System.screenWidth()`
+## `Display.screenWidth()`
 
 **Params:** none
 
@@ -143,7 +145,7 @@ System.fillScreen(0x001F)
 
 ---
 
-## `System.screenHeight()`
+## `Display.screenHeight()`
 
 **Params:** none
 
@@ -163,8 +165,8 @@ Example supported layouts:
 Responsive example:
 
 ```lua
-local width = System.screenWidth()
-local height = System.screenHeight()
+local width = Display.screenWidth()
+local height = Display.screenHeight()
 
 if height >= 200 then
     -- Tall display layout
@@ -175,7 +177,7 @@ end
 
 ---
 
-## `System.color(r, g, b)`
+## `Display.color(r, g, b)`
 
 **Params:**
 
@@ -188,46 +190,44 @@ end
 **Description:** Converts 24-bit RGB values into RGB565.
 
 ```lua
-local blue = System.color(0, 0, 255)
+local blue = Display.color(0, 0, 255)
 
-System.fillScreen(blue)
+Display.fillScreen(blue)
 ```
 
 ---
 
 ## Drawing Primitives
 
-### `System.drawPixel(x, y, color)`
+### `Display.drawPixel(x, y, color)`
 
-### `System.drawLine(x0, y0, x1, y1, color)`
+### `Display.drawLine(x0, y0, x1, y1, color)`
 
-### `System.drawRect(x, y, w, h, color)`
+### `Display.drawRect(x, y, w, h, color)`
 
-### `System.fillRect(x, y, w, h, color)`
+### `Display.fillRect(x, y, w, h, color)`
 
-### `System.drawCircle(x, y, r, color)`
+### `Display.drawCircle(x, y, r, color)`
 
-### `System.fillCircle(x, y, r, color)`
+### `Display.fillCircle(x, y, r, color)`
 
-### `System.drawTriangle(x0, y0, x1, y1, x2, y2, color)`
+### `Display.drawTriangle(x0, y0, x1, y1, x2, y2, color)`
 
-### `System.fillTriangle(x0, y0, x1, y1, x2, y2, color)`
+### `Display.fillTriangle(x0, y0, x1, y1, x2, y2, color)`
 
-### `System.drawRoundRect(x, y, w, h, r, color)`
+### `Display.drawRoundRect(x, y, w, h, r, color)`
 
-### `System.fillRoundRect(x, y, w, h, r, color)`
-
-### `System.drawFastVLine(x, y, h, color)`
-
-### `System.drawFastHLine(x, y, w, color)`
+### `Display.fillRoundRect(x, y, w, h, r, color)`
 
 **Returns:** `none`
 
 **Description:** Hardware rendering primitives. Drawing is performed directly on the physical TFT unless a sprite is currently bound.
 
+> **Note:** `drawFastVLine` and `drawFastHLine` are **not** part of `Display`. They are registered on the `Sprite` table (see §3).
+
 ---
 
-## `System.drawBMP(path, x, y)`
+## `Display.drawBMP(path, x, y)`
 
 **Params:**
 
@@ -242,19 +242,21 @@ System.fillScreen(blue)
 Examples:
 
 ```lua
-System.drawBMP("/local/image.bmp", 0, 0)
-System.drawBMP("/sd/image.bmp", 20, 20)
+Display.drawBMP("/local/image.bmp", 0, 0)
+Display.drawBMP("/sd/image.bmp", 20, 20)
 ```
 
 Returns `true` on success and `false` when the file cannot be loaded or is unsupported.
 
 ---
 
-# 3. SPRITES (`System.*`)
+# 3. SPRITES (`Sprite.*`)
 
 Sprites provide off-screen rendering for reduced flicker and frame-based rendering.
 
-## `System.createSprite(w, h)`
+> The Sprite API uses short method names — `create`, `delete`, `push`, `bind` — not `createSprite` / `deleteSprite` / `pushSprite` / `bindSprite`.
+
+## `Sprite.create(w, h)`
 
 **Params:**
 
@@ -270,15 +272,15 @@ The kernel attempts 16-bit color and may fall back to 8-bit color when contiguou
 Example:
 
 ```lua
-if System.createSprite(240, 32) then
-    System.bindSprite(true)
+if Sprite.create(240, 32) then
+    Sprite.bind(true)
 
     -- Draw sprite
 
-    System.bindSprite(false)
-    System.pushSprite(0, 0)
+    Sprite.bind(false)
+    Sprite.push(0, 0)
 
-    System.deleteSprite()
+    Sprite.delete()
 end
 ```
 
@@ -302,7 +304,7 @@ Use smaller slices whenever possible, for example:
 
 ---
 
-## `System.bindSprite(enable)`
+## `Sprite.bind(enable)`
 
 **Params:**
 
@@ -313,18 +315,18 @@ Use smaller slices whenever possible, for example:
 **Description:** Enables or disables rendering into the active sprite.
 
 ```lua
-System.bindSprite(true)
+Sprite.bind(true)
 
 -- Drawing goes to sprite
 
-System.bindSprite(false)
+Sprite.bind(false)
 
 -- Drawing goes directly to TFT
 ```
 
 ---
 
-## `System.pushSprite(x, y)`
+## `Sprite.push(x, y)`
 
 **Params:**
 
@@ -337,7 +339,7 @@ System.bindSprite(false)
 
 ---
 
-## `System.deleteSprite()`
+## `Sprite.delete()`
 
 **Params:** none
 
@@ -349,9 +351,19 @@ Always call this when finished with a sprite.
 
 ---
 
-# 4. TEXT & FONTS (`System.*`)
+## `Sprite.drawFastVLine(x, y, h, color)`
 
-## `System.drawString(str, x, y, font)`
+## `Sprite.drawFastHLine(x, y, w, color)`
+
+**Returns:** `none`
+
+**Description:** Fast line-drawing helpers, registered under `Sprite` in the native binding.
+
+---
+
+# 4. TEXT & FONTS (`Display.*`)
+
+## `Display.drawString(str, x, y, font)`
 
 **Params:**
 
@@ -375,13 +387,13 @@ Supported hardware font selections:
 Example:
 
 ```lua
-System.drawString("Hello KryonOS!", 10, 20)
-System.drawString("Large Text", 10, 60, 4)
+Display.drawString("Hello KryonOS!", 10, 20)
+Display.drawString("Large Text", 10, 60, 4)
 ```
 
 ---
 
-## `System.setTextColor(fg, bg)`
+## `Display.setTextColor(fg, bg)`
 
 **Params:**
 
@@ -393,12 +405,12 @@ System.drawString("Large Text", 10, 60, 4)
 **Description:** Sets foreground and optional background text color.
 
 ```lua
-System.setTextColor(0xFFFF, 0x001F)
+Display.setTextColor(0xFFFF, 0x001F)
 ```
 
 ---
 
-## `System.setTextSize(size)`
+## `Display.setTextSize(size)`
 
 **Params:**
 
@@ -409,47 +421,47 @@ System.setTextColor(0xFFFF, 0x001F)
 **Description:** Changes text rendering scale.
 
 ```lua
-System.setTextSize(2)
+Display.setTextSize(2)
 ```
 
 ---
 
-# 5. GPIO & HARDWARE (`System.gpio.*`)
+# 5. GPIO & HARDWARE (`GPIO.*`)
 
 ## Constants
 
 ```lua
-System.gpio.INPUT
-System.gpio.OUTPUT
-System.gpio.INPUT_PULLUP
+GPIO.INPUT
+GPIO.OUTPUT
+GPIO.INPUT_PULLUP
 
-System.gpio.HIGH
-System.gpio.LOW
+GPIO.HIGH
+GPIO.LOW
 ```
 
 ---
 
-## `System.gpio.pinMode(pin, mode)`
+## `GPIO.pinMode(pin, mode)`
 
 Configures GPIO pin mode.
 
 ```lua
-System.gpio.pinMode(2, System.gpio.OUTPUT)
+GPIO.pinMode(2, GPIO.OUTPUT)
 ```
 
 ---
 
-## `System.gpio.digitalWrite(pin, value)`
+## `GPIO.digitalWrite(pin, value)`
 
 Writes HIGH or LOW to a GPIO.
 
 ```lua
-System.gpio.digitalWrite(2, System.gpio.HIGH)
+GPIO.digitalWrite(2, GPIO.HIGH)
 ```
 
 ---
 
-## `System.gpio.digitalRead(pin)`
+## `GPIO.digitalRead(pin)`
 
 **Returns:** `integer`
 
@@ -460,7 +472,7 @@ System.gpio.digitalWrite(2, System.gpio.HIGH)
 
 ---
 
-## `System.gpio.analogRead(pin)`
+## `GPIO.analogRead(pin)`
 
 **Returns:** `integer`
 
@@ -472,7 +484,7 @@ ESP32 ADC range:
 
 ---
 
-## `System.gpio.analogWrite(pin, value)`
+## `GPIO.analogWrite(pin, value)`
 
 **Params:**
 
@@ -485,7 +497,7 @@ Uses hardware PWM.
 
 ---
 
-## `System.gpio.pulseIn(pin, state, timeout)`
+## `GPIO.pulseIn(pin, state, timeout)`
 
 **Params:**
 
@@ -507,9 +519,9 @@ Returns `0` if the timeout expires without detecting the requested pulse.
 
 ---
 
-# 6. KEYBOARD & INPUT (`System.*`)
+# 6. KEYBOARD & INPUT (`Input.*` / `Keyboard.*`)
 
-## `System.getKey()`
+## `Input.getKey()`
 
 **Params:** none
 
@@ -536,7 +548,7 @@ Possible values:
 Example:
 
 ```lua
-local key = System.getKey()
+local key = Input.getKey()
 
 if key == "ENTER" then
     -- Confirm
@@ -547,7 +559,7 @@ end
 
 ---
 
-## `System.isKeyPressed(keyName)`
+## `Input.isKeyPressed(keyName)`
 
 **Params:**
 
@@ -558,14 +570,14 @@ end
 Checks whether a specific key is currently pressed.
 
 ```lua
-if System.isKeyPressed("ENTER") then
+if Input.isKeyPressed("ENTER") then
     -- Enter is pressed
 end
 ```
 
 ---
 
-## `System.getKeyInput()`
+## `Input.getKeyInput()`
 
 **Params:** none
 
@@ -590,16 +602,16 @@ Fields:
 Example:
 
 ```lua
-local input = System.getKeyInput()
+local input = Input.getKeyInput()
 
 if input.pressed then
-    System.print(input.key)
+    Harix.print(input.key)
 end
 ```
 
 ---
 
-## `System.getChar()`
+## `Input.getChar()`
 
 **Params:** none
 
@@ -618,17 +630,17 @@ Possible input includes:
 Example:
 
 ```lua
-local char = System.getChar()
+local char = Input.getChar()
 
 if char ~= "" then
-    System.print(char)
+    Harix.print(char)
 end
 ```
 
 For application/system exit, prefer:
 
 ```lua
-System.getKey()
+Input.getKey()
 ```
 
 and check for:
@@ -639,7 +651,7 @@ and check for:
 
 ---
 
-## `System.prompt(msg, initialText)`
+## `Keyboard.prompt(msg, initialText)`
 
 **Params:**
 
@@ -650,17 +662,19 @@ and check for:
 
 Opens the native KryonOS on-screen keyboard/text-input interface.
 
-```lua
-local name = System.prompt("Enter your name", "")
+> Note: this method lives on the `Keyboard` table, not `Input`.
 
-System.print(name)
+```lua
+local name = Keyboard.prompt("Enter your name", "")
+
+Harix.print(name)
 ```
 
 Execution is suspended while the native input interface is active.
 
 ---
 
-## `System.getTouch()`
+## `Input.getTouch()`
 
 **Params:** none
 
@@ -699,10 +713,10 @@ The top-right region is reserved for application/OS exit.
 Recommended check:
 
 ```lua
-local touch = System.getTouch()
+local touch = Input.getTouch()
 
 if touch.touched and
-   touch.x >= System.screenWidth() - 40 and
+   touch.x >= Display.screenWidth() - 40 and
    touch.y <= 40 then
 
     break
@@ -711,9 +725,9 @@ end
 
 ---
 
-# 7. SYSTEM UTILITIES & HARDWARE INFORMATION
+# 7. SYSTEM UTILITIES & HARDWARE INFORMATION (`Harix.*`)
 
-## `System.millis()`
+## `Harix.millis()`
 
 **Returns:** `integer`
 
@@ -721,7 +735,7 @@ Returns system uptime in milliseconds.
 
 ---
 
-## `System.micros()`
+## `Harix.micros()`
 
 **Returns:** `integer`
 
@@ -731,7 +745,7 @@ The 32-bit counter rolls over approximately every 71 minutes.
 
 ---
 
-## `System.delay(ms)`
+## `Harix.delay(ms)`
 
 **Params:**
 
@@ -745,7 +759,7 @@ Required for long-running loops.
 
 ---
 
-## `System.delayMicroseconds(us)`
+## `Harix.delayMicroseconds(us)`
 
 **Params:**
 
@@ -755,11 +769,11 @@ Required for long-running loops.
 
 Provides a high-resolution blocking delay.
 
-Does not provide the same garbage-collection opportunity as `System.delay()`.
+Does not provide the same garbage-collection opportunity as `Harix.delay()`.
 
 ---
 
-## `System.print(msg)`
+## `Harix.print(msg)`
 
 **Params:**
 
@@ -777,7 +791,7 @@ Default baud rate:
 
 ---
 
-## `System.getTemperature()`
+## `Harix.getTemperature()`
 
 **Returns:** `float`
 
@@ -785,7 +799,7 @@ Returns ESP32 internal temperature in degrees Celsius when supported.
 
 ---
 
-## `System.hasTemperatureSensor()`
+## `Harix.hasTemperatureSensor()`
 
 **Returns:** `boolean`
 
@@ -793,7 +807,7 @@ Returns `true` if the installed ESP32 chip supports the internal temperature sen
 
 ---
 
-## `System.getInfo()`
+## `Harix.getInfo()`
 
 **Returns:** `table`
 
@@ -829,21 +843,19 @@ Fields:
 
 ---
 
-## `System.restart()`
+## `Harix.restart()`
 
 **Returns:** `none`
 
 Immediately reboots the ESP32.
 
 ```lua
-System.restart()
+Harix.restart()
 ```
 
 ---
 
-# 8. TIME, DATE & NETWORK (`System.*`)
-
-## `System.getTime()`
+## `Harix.getTime()`
 
 **Returns:** `string`
 
@@ -851,7 +863,7 @@ Returns OS-formatted local time according to the configured 12/24-hour preferenc
 
 ---
 
-## `System.getSeconds()`
+## `Harix.getSeconds()`
 
 **Returns:** `integer`
 
@@ -863,7 +875,7 @@ Returns current seconds:
 
 ---
 
-## `System.getDate()`
+## `Harix.getDate()`
 
 **Returns:** `string`
 
@@ -877,7 +889,7 @@ Example:
 
 ---
 
-## `System.getYear()`
+## `Harix.getYear()`
 
 **Returns:** `integer`
 
@@ -885,7 +897,7 @@ Returns four-digit year.
 
 ---
 
-## `System.getMonth()`
+## `Harix.getMonth()`
 
 **Returns:** `integer`
 
@@ -897,7 +909,7 @@ Returns month:
 
 ---
 
-## `System.getDay()`
+## `Harix.getDay()`
 
 **Returns:** `integer`
 
@@ -909,7 +921,7 @@ Returns day of month:
 
 ---
 
-## `System.getTimezone()`
+## `Harix.getTimezone()`
 
 **Returns:** `string`
 
@@ -917,7 +929,7 @@ Returns configured timezone.
 
 ---
 
-## `System.getOSVersion()`
+## `Harix.getOSVersion()`
 
 **Returns:** `string`
 
@@ -925,15 +937,17 @@ Returns current KryonOS version.
 
 ---
 
-## `System.getAPILevel()`
+## `Harix.getAPILevel()`
 
 **Returns:** `integer`
 
-Returns current KryonOS Lua API level.
+Returns current KryonOS Lua API level (currently `2`).
 
 ---
 
-## `System.getIPAddress()`
+# 8. NETWORK (`Network.*`)
+
+## `Network.getIPAddress()`
 
 **Returns:** `string`
 
@@ -941,7 +955,7 @@ Returns local ESP32 IP address when WiFi is connected.
 
 ---
 
-## `System.isWiFiActive()`
+## `Network.isWiFiActive()`
 
 **Returns:** `boolean`
 
@@ -949,7 +963,7 @@ Returns `true` when WiFi is active/connected.
 
 ---
 
-# 9. FILE SYSTEM (`FS.*`)
+# 9. FILE SYSTEM (`FileSystem.*`)
 
 KryonOS provides a unified filesystem interface.
 
@@ -965,9 +979,11 @@ SD card:
 /sd/
 ```
 
+> **Note:** The existence check is `FileSystem.fileExists()`, not `FileSystem.exists()`.
+
 ---
 
-## `FS.exists(path)`
+## `FileSystem.fileExists(path)`
 
 **Returns:** `boolean`
 
@@ -975,7 +991,7 @@ Checks whether a file or directory exists.
 
 ---
 
-## `FS.readTextFile(path)`
+## `FileSystem.readTextFile(path)`
 
 **Returns:** `string` or `nil`
 
@@ -985,7 +1001,7 @@ For large files, avoid loading the entire file into the Lua heap.
 
 ---
 
-## `FS.writeTextFile(path, content)`
+## `FileSystem.writeTextFile(path, content)`
 
 **Returns:** `boolean`
 
@@ -995,7 +1011,7 @@ Existing content is replaced.
 
 ---
 
-## `FS.appendTextFile(path, content)`
+## `FileSystem.appendTextFile(path, content)`
 
 **Returns:** `boolean`
 
@@ -1003,7 +1019,7 @@ Appends text content to a file.
 
 ---
 
-## `FS.deleteFile(path)`
+## `FileSystem.deleteFile(path)`
 
 **Returns:** `boolean`
 
@@ -1011,7 +1027,7 @@ Deletes a file.
 
 ---
 
-## `FS.renameFile(from, to)`
+## `FileSystem.renameFile(from, to)`
 
 **Returns:** `boolean`
 
@@ -1019,7 +1035,7 @@ Renames or moves a file within the same storage partition.
 
 ---
 
-## `FS.listDir(path)`
+## `FileSystem.listDir(path)`
 
 **Returns:** `table`
 
@@ -1030,16 +1046,16 @@ Lua arrays are **1-indexed**.
 Example:
 
 ```lua
-local files = FS.listDir("/local")
+local files = FileSystem.listDir("/local")
 
 for i = 1, #files do
-    System.print(files[i])
+    Harix.print(files[i])
 end
 ```
 
 ---
 
-## `FS.mkdir(path)`
+## `FileSystem.mkdir(path)`
 
 **Returns:** `boolean`
 
@@ -1047,7 +1063,7 @@ Creates a directory.
 
 ---
 
-## `FS.rmdir(path)`
+## `FileSystem.rmdir(path)`
 
 **Returns:** `boolean`
 
@@ -1055,7 +1071,7 @@ Removes an empty directory.
 
 ---
 
-## `FS.isDirectory(path)`
+## `FileSystem.isDirectory(path)`
 
 **Returns:** `boolean`
 
@@ -1063,7 +1079,7 @@ Checks whether a path is a directory.
 
 ---
 
-## `FS.isFile(path)`
+## `FileSystem.isFile(path)`
 
 **Returns:** `boolean`
 
@@ -1071,7 +1087,7 @@ Checks whether a path is a file.
 
 ---
 
-## `FS.getFileSize(path)`
+## `FileSystem.getFileSize(path)`
 
 **Returns:** `integer`
 
@@ -1079,7 +1095,7 @@ Returns file size in bytes.
 
 ---
 
-## `FS.getTotalSpace(drive)`
+## `FileSystem.getTotalSpace(drive)`
 
 **Returns:** `integer`
 
@@ -1094,7 +1110,7 @@ Valid drives:
 
 ---
 
-## `FS.getUsedSpace(drive)`
+## `FileSystem.getUsedSpace(drive)`
 
 **Returns:** `integer`
 
@@ -1102,7 +1118,7 @@ Returns used storage space in bytes.
 
 ---
 
-## `FS.getFreeSpace(drive)`
+## `FileSystem.getFreeSpace(drive)`
 
 **Returns:** `integer`
 
@@ -1110,7 +1126,7 @@ Returns free storage space in bytes.
 
 ---
 
-## `FS.getFileMD5(path)`
+## `FileSystem.getFileMD5(path)`
 
 **Returns:** `string`
 
@@ -1124,7 +1140,7 @@ d41d8cd98f00b204e9800998ecf8427e
 
 ---
 
-## `FS.mountSD()`
+## `FileSystem.mountSD()`
 
 **Returns:** `boolean`
 
@@ -1134,7 +1150,7 @@ Returns `true` when successful.
 
 ---
 
-## `FS.unmountSD()`
+## `FileSystem.unmountSD()`
 
 **Returns:** `none`
 
@@ -1142,7 +1158,7 @@ Unmounts the SD card filesystem.
 
 ---
 
-# 10. BINARY FILES (`FS.*`)
+# 10. BINARY FILES (`FileSystem.*`)
 
 KryonOS Lua supports raw binary file access.
 
@@ -1150,7 +1166,7 @@ Lua strings can contain null bytes (`0x00`) and therefore can be used to represe
 
 ---
 
-## `FS.readBinaryFile(path)`
+## `FileSystem.readBinaryFile(path)`
 
 **Params:**
 
@@ -1166,10 +1182,10 @@ Lua strings can contain null bytes (`0x00`) and therefore can be used to represe
 Example:
 
 ```lua
-local data = FS.readBinaryFile("/local/data.bin")
+local data = FileSystem.readBinaryFile("/local/data.bin")
 
 if data ~= nil then
-    System.print("Binary file loaded")
+    Harix.print("Binary file loaded")
 end
 ```
 
@@ -1185,7 +1201,7 @@ The returned string length corresponds to the number of bytes read.
 
 ---
 
-## `FS.writeBinaryFile(path, data)`
+## `FileSystem.writeBinaryFile(path, data)`
 
 **Params:**
 
@@ -1201,7 +1217,7 @@ Example:
 ```lua
 local data = string.char(1, 2, 3, 255)
 
-local success = FS.writeBinaryFile(
+local success = FileSystem.writeBinaryFile(
     "/local/test.bin",
     data
 )
@@ -1218,23 +1234,23 @@ Applications should not assume that the display is always 240×320.
 Use:
 
 ```lua
-local width = System.screenWidth()
-local height = System.screenHeight()
+local width = Display.screenWidth()
+local height = Display.screenHeight()
 ```
 
 Example:
 
 ```lua
-local width = System.screenWidth()
-local height = System.screenHeight()
+local width = Display.screenWidth()
+local height = Display.screenHeight()
 
 if height >= 200 then
 
-    System.drawString("240x320 Layout", 10, 20)
+    Display.drawString("240x320 Layout", 10, 20)
 
 else
 
-    System.drawString("240x135 Layout", 10, 20)
+    Display.drawString("240x135 Layout", 10, 20)
 
 end
 ```
@@ -1242,14 +1258,14 @@ end
 For a responsive button:
 
 ```lua
-local width = System.screenWidth()
+local width = Display.screenWidth()
 
 local buttonX = width - 45
 local buttonY = 5
 local buttonW = 40
 local buttonH = 25
 
-System.fillRoundRect(
+Display.fillRoundRect(
     buttonX,
     buttonY,
     buttonW,
@@ -1266,30 +1282,30 @@ System.fillRoundRect(
 A standard KryonOS Lua application should follow this structure:
 
 ```lua
-local width = System.screenWidth()
-local height = System.screenHeight()
+local width = Display.screenWidth()
+local height = Display.screenHeight()
 
 local BLUE = 0x001F
 local WHITE = 0xFFFF
 local RED = 0xF800
 
-System.fillScreen(BLUE)
-System.setTextColor(WHITE, BLUE)
+Display.fillScreen(BLUE)
+Display.setTextColor(WHITE, BLUE)
 
-System.drawString(
+Display.drawString(
     "KryonOS Lua",
     10,
     15
 )
 
 if height >= 200 then
-    System.drawString(
+    Display.drawString(
         "240x320 Layout",
         10,
         50
     )
 else
-    System.drawString(
+    Display.drawString(
         "240x135 Layout",
         10,
         50
@@ -1299,7 +1315,7 @@ end
 while true do
 
     -- Touch input
-    local touch = System.getTouch()
+    local touch = Input.getTouch()
 
     if touch.touched and
        touch.x >= width - 40 and
@@ -1309,145 +1325,140 @@ while true do
     end
 
     -- Keyboard input
-    local key = System.getKey()
+    local key = Input.getKey()
 
     if key == "ESC" then
         break
     end
 
     -- Character input
-    local char = System.getChar()
+    local char = Input.getChar()
 
     if char ~= "" then
         -- Process character
     end
 
     -- Required for kernel/GC responsiveness
-    System.delay(10)
+    Harix.delay(10)
 end
 
 -- Application cleanup
-System.fillScreen(BLUE)
+Display.fillScreen(BLUE)
 ```
 
 ---
 
 # 13. API SUMMARY
 
-## Display
+## Display (`Display.*`)
 
 ```text
-System.fillScreen()
-System.screenWidth()
-System.screenHeight()
-System.color()
-System.drawPixel()
-System.drawLine()
-System.drawRect()
-System.fillRect()
-System.drawCircle()
-System.fillCircle()
-System.drawTriangle()
-System.fillTriangle()
-System.drawRoundRect()
-System.fillRoundRect()
-System.drawFastVLine()
-System.drawFastHLine()
-System.drawBMP()
+Display.fillScreen()
+Display.screenWidth()
+Display.screenHeight()
+Display.color()
+Display.drawPixel()
+Display.drawLine()
+Display.drawRect()
+Display.fillRect()
+Display.drawCircle()
+Display.fillCircle()
+Display.drawTriangle()
+Display.fillTriangle()
+Display.drawRoundRect()
+Display.fillRoundRect()
+Display.drawBMP()
+Display.drawString()
+Display.setTextColor()
+Display.setTextSize()
 ```
 
-## Sprites
+## Sprites (`Sprite.*`)
 
 ```text
-System.createSprite()
-System.deleteSprite()
-System.pushSprite()
-System.bindSprite()
+Sprite.create()
+Sprite.delete()
+Sprite.push()
+Sprite.bind()
+Sprite.drawFastVLine()
+Sprite.drawFastHLine()
 ```
 
-## Text
+## Input (`Input.*` / `Keyboard.*`)
 
 ```text
-System.drawString()
-System.setTextColor()
-System.setTextSize()
+Input.getKey()
+Input.isKeyPressed()
+Input.getKeyInput()
+Input.getChar()
+Input.getTouch()
+Keyboard.prompt()
 ```
 
-## Input
+## GPIO (`GPIO.*`)
 
 ```text
-System.getKey()
-System.isKeyPressed()
-System.getKeyInput()
-System.getChar()
-System.prompt()
-System.getTouch()
+GPIO.pinMode()
+GPIO.digitalWrite()
+GPIO.digitalRead()
+GPIO.analogRead()
+GPIO.analogWrite()
+GPIO.pulseIn()
 ```
 
-## GPIO
+## System (`Harix.*`)
 
 ```text
-System.gpio.pinMode()
-System.gpio.digitalWrite()
-System.gpio.digitalRead()
-System.gpio.analogRead()
-System.gpio.analogWrite()
-System.gpio.pulseIn()
+Harix.millis()
+Harix.micros()
+Harix.delay()
+Harix.delayMicroseconds()
+Harix.print()
+Harix.getTemperature()
+Harix.hasTemperatureSensor()
+Harix.getInfo()
+Harix.restart()
+Harix.getTime()
+Harix.getSeconds()
+Harix.getDate()
+Harix.getYear()
+Harix.getMonth()
+Harix.getDay()
+Harix.getTimezone()
+Harix.getOSVersion()
+Harix.getAPILevel()
 ```
 
-## System
+## Network (`Network.*`)
 
 ```text
-System.millis()
-System.micros()
-System.delay()
-System.delayMicroseconds()
-System.print()
-System.getTemperature()
-System.hasTemperatureSensor()
-System.getInfo()
-System.restart()
+Network.getIPAddress()
+Network.isWiFiActive()
 ```
 
-## Time & Network
+## File System (`FileSystem.*`)
 
 ```text
-System.getTime()
-System.getSeconds()
-System.getDate()
-System.getYear()
-System.getMonth()
-System.getDay()
-System.getTimezone()
-System.getOSVersion()
-System.getAPILevel()
-System.getIPAddress()
-System.isWiFiActive()
-```
-
-## File System
-
-```text
-FS.exists()
-FS.readTextFile()
-FS.writeTextFile()
-FS.appendTextFile()
-FS.deleteFile()
-FS.renameFile()
-FS.listDir()
-FS.mkdir()
-FS.rmdir()
-FS.isDirectory()
-FS.isFile()
-FS.getFileSize()
-FS.getTotalSpace()
-FS.getUsedSpace()
-FS.getFreeSpace()
-FS.getFileMD5()
-FS.mountSD()
-FS.unmountSD()
-FS.readBinaryFile()
-FS.writeBinaryFile()
+FileSystem.fileExists()
+FileSystem.readTextFile()
+FileSystem.writeTextFile()
+FileSystem.appendTextFile()
+FileSystem.deleteFile()
+FileSystem.renameFile()
+FileSystem.listDir()
+FileSystem.mkdir()
+FileSystem.rmdir()
+FileSystem.isDirectory()
+FileSystem.isFile()
+FileSystem.getFileSize()
+FileSystem.getTotalSpace()
+FileSystem.getUsedSpace()
+FileSystem.getFreeSpace()
+FileSystem.getFileMD5()
+FileSystem.mountSD()
+FileSystem.unmountSD()
+FileSystem.readBinaryFile()
+FileSystem.writeBinaryFile()
 ```
 
 ---
@@ -1455,28 +1466,29 @@ FS.writeBinaryFile()
 # 14. IMPORTANT LUA APPLICATION RULES
 
 1. **Poll input continuously** in applications that remain active.
-2. Call `System.getTouch()` to allow touchscreen interaction and system exit processing.
-3. Call `System.getKey()` for keyboard/navigation events.
-4. Use `System.getChar()` for character-oriented input.
+2. Call `Input.getTouch()` to allow touchscreen interaction and system exit processing.
+3. Call `Input.getKey()` for keyboard/navigation events.
+4. Use `Input.getChar()` for character-oriented input.
 5. `ESC` is the standard keyboard exit action.
 6. The top-right touchscreen area is reserved for application/OS exit.
-7. Long-running loops must call `System.delay(10)` or another appropriate delay.
+7. Long-running loops must call `Harix.delay(10)` or another appropriate delay.
 8. Avoid unnecessary RAM allocations.
 9. Avoid full-screen sprites on memory-constrained ESP32 hardware.
 10. Prefer sliced rendering for large graphics.
-11. Always call `System.deleteSprite()` after finishing with a sprite.
-12. Use `System.screenWidth()` and `System.screenHeight()` for responsive layouts.
+11. Always call `Sprite.delete()` after finishing with a sprite.
+12. Use `Display.screenWidth()` and `Display.screenHeight()` for responsive layouts.
 13. Use `/local/` for internal storage.
 14. Use `/sd/` for SD card storage.
-15. Use binary file APIs for binary data.
+15. Use binary file APIs (`FileSystem.readBinaryFile` / `FileSystem.writeBinaryFile`) for binary data.
 16. Lua tables returned as arrays/lists are **1-indexed**.
 17. `nil` is used to indicate missing/unreadable file content where specified.
-18. `System.getKey()` should be preferred over interpreting raw characters for system/navigation actions.
+18. `Input.getKey()` should be preferred over interpreting raw characters for system/navigation actions.
+19. There is no global `System` or `FS` table — use `Display`, `Sprite`, `GPIO`, `Input`, `Keyboard`, `Harix`, `Network`, and `FileSystem` as registered by `LuaBindings::init`.
 
 ---
 
-**Document Version:** 2.0
+**Document Version:** 3.0
 **Target:** KryonOS Lua Runtime / HarixKernel
 **Platform:** ESP32
 **Runtime:** Embedded Lua 5.1
-**API Level:** 1
+**API Level:** 2

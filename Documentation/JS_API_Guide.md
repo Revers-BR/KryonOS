@@ -3,10 +3,12 @@
 **Context:** Embedded JavaScript environment using Duktape 2.x on ESP32 for KryonOS.
 
 **Runtime:** Duktape 2.x
-**JavaScript API Level:** 1
-**Global Namespaces:** `System` and `FS`
+**JavaScript API Level:** 2
+**Global Namespaces:** `Display`, `Sprite`, `GPIO`, `Input`, `Keyboard`, `Harix`, `Network`, `FileSystem`
 
 > **Important:** KryonOS JavaScript uses an ES5-compatible syntax. Use `var` instead of `let`/`const`, traditional functions instead of arrow functions, and avoid unsupported modern syntax.
+
+> **Note on this revision:** the previous version of this document described a single `System` object and an `FS` object. That does **not** match the actual native bindings (`JSBindings::init`). The real global objects are `Display`, `Sprite`, `GPIO`, `Input`, `Keyboard`, `Harix`, `Network`, and `FileSystem`, mirroring the same layout used by the Lua and Wren bindings in HarixKernel. This document has been corrected accordingly.
 
 ---
 
@@ -33,26 +35,18 @@ KryonOS JavaScript is based on **Duktape 2.x**.
 ```javascript
 let value = 10;
 const name = "KryonOS";
-var fn = function() {};
-```
-
-Use `var` and traditional functions.
-
-The following syntax is not supported:
-
-```javascript
 var fn = () => {};
 class MyClass {}
 var text = `Hello ${name}`;
 ```
 
-Use:
+Use instead:
 
 ```javascript
+var value = 10;
+var name = "KryonOS";
 var fn = function() {};
 ```
-
-instead.
 
 ---
 
@@ -63,8 +57,8 @@ JavaScript execution is designed for low-memory ESP32 environments.
 * Approximate usable heap per script: ~90 KB when WiFi is disabled.
 * Avoid unnecessary dynamic allocations.
 * Avoid creating large arrays repeatedly inside loops.
-* `System.delay(ms)` allows the kernel to perform background garbage collection.
-* Infinite loops **must** call `System.delay()` periodically.
+* `Harix.delay(ms)` allows the kernel to perform background garbage collection.
+* Infinite loops **must** call `Harix.delay()` periodically.
 
 Example:
 
@@ -72,7 +66,7 @@ Example:
 while (true) {
     // Application code
 
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
 
@@ -88,46 +82,46 @@ The recommended application loop is:
 
 ```javascript
 while (true) {
-    var touch = System.getTouch();
-    var key = System.getKey();
-    var character = System.getChar();
+    var touch = Input.getTouch();
+    var key = Input.getKey();
+    var character = Input.getChar();
 
     // Application logic
 
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
 
 ## 2.1 Touchscreen Exit
 
-`System.getTouch()` must be called regularly by applications that use the touchscreen.
+`Input.getTouch()` must be called regularly by applications that use the touchscreen.
 
 The **top-right corner** is reserved as the system/application exit area.
+
+> **UI guidance:** touch interaction in HarixKernel apps should rely on virtual buttons drawn on screen (tappable rectangles/lines with hit-testing), not free-form touch anywhere on the screen. The exit-corner check below is the one exception, handled by the kernel/app boundary itself.
 
 Touch condition:
 
 ```javascript
 touch.touched &&
-touch.x >= System.screenWidth() - 40 &&
+touch.x >= Display.screenWidth() - 40 &&
 touch.y <= 40
 ```
-
-The KryonOS kernel recognizes this area as an OS exit trigger.
 
 Example:
 
 ```javascript
 while (true) {
-    var touch = System.getTouch();
+    var touch = Input.getTouch();
 
     if (touch.touched) {
-        if (touch.x >= System.screenWidth() - 40 &&
+        if (touch.x >= Display.screenWidth() - 40 &&
             touch.y <= 40) {
             break;
         }
     }
 
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
 
@@ -137,7 +131,7 @@ When the JavaScript execution reaches the end of the script or exits its main lo
 
 ## 2.2 Keyboard Exit
 
-`System.getKey()` can be used to detect navigation and system keys.
+`Input.getKey()` can be used to detect navigation and system keys.
 
 `ESC` is reserved as an application exit action.
 
@@ -145,21 +139,23 @@ Example:
 
 ```javascript
 while (true) {
-    var key = System.getKey();
+    var key = Input.getKey();
 
     if (key === "ESC") {
         break;
     }
 
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
+
+Numeric key-code constants are also available globally for comparison against `Input.getKeyInput().code`: `BOARD_KEY_UP`, `BOARD_KEY_DOWN`, `BOARD_KEY_LEFT`, `BOARD_KEY_RIGHT`, `BOARD_KEY_ENTER`, `BOARD_KEY_SPACE`.
 
 ---
 
 ## 2.3 Character Input and Exit
 
-`System.getChar()` translates keyboard input into characters.
+`Input.getChar()` translates keyboard input into characters.
 
 Applications can use it for text-oriented input.
 
@@ -167,84 +163,52 @@ Example:
 
 ```javascript
 while (true) {
-    var character = System.getChar();
+    var character = Input.getChar();
 
     if (character === "\x1B") {
         break;
     }
 
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
 
-Applications should normally use `System.getKey()` for system/navigation actions and `System.getChar()` for text input.
+Applications should normally use `Input.getKey()` for system/navigation actions and `Input.getChar()` for text input.
 
 ---
 
-# 3. GRAPHICS & DISPLAY (`System.*`)
+# 3. GRAPHICS & DISPLAY (`Display.*`)
 
-## `System.fillScreen(color)`
+## `Display.fillScreen(color)`
 
-**Params:**
-
-* `color` — integer RGB565 color
-
+**Params:** `color` — integer RGB565 color
 **Returns:** `undefined`
-
-**Description:** Fills the entire physical display or active sprite with the specified color.
-
-Example:
+**Description:** Fills the entire physical display (or active sprite, if bound) with the specified color.
 
 ```javascript
-System.fillScreen(0x001F);
+Display.fillScreen(0x001F);
 ```
 
 ---
 
-## `System.screenWidth()`
+## `Display.screenWidth()`
 
-**Params:** none
+**Returns:** `integer` — physical display width in pixels.
 
-**Returns:** `integer`
+## `Display.screenHeight()`
 
-**Description:** Returns the physical display width in pixels.
+**Returns:** `integer` — physical display height in pixels.
 
-Example:
-
-```javascript
-var width = System.screenWidth();
-```
-
----
-
-## `System.screenHeight()`
-
-**Params:** none
-
-**Returns:** `integer`
-
-**Description:** Returns the physical display height in pixels.
-
-Example:
-
-```javascript
-var height = System.screenHeight();
-```
-
-Applications should use these functions instead of hard-coding screen dimensions.
-
-Supported layouts include, for example:
+Applications should use these functions instead of hard-coding screen dimensions. Supported layouts include, for example:
 
 ```text
 240 x 320
 240 x 135
 ```
 
-Example:
-
 ```javascript
-var width = System.screenWidth();
-var height = System.screenHeight();
+var width = Display.screenWidth();
+var height = Display.screenHeight();
 
 if (height >= 200) {
     // Portrait / tall layout
@@ -255,71 +219,47 @@ if (height >= 200) {
 
 ---
 
-## `System.color(r, g, b)`
+## `Display.color(r, g, b)`
 
-**Params:**
-
-* `r` — integer 0-255
-* `g` — integer 0-255
-* `b` — integer 0-255
-
+**Params:** `r`, `g`, `b` — integers 0-255
 **Returns:** `integer` RGB565 color
-
 **Description:** Converts 24-bit RGB values to the 16-bit RGB565 format used by the TFT display.
 
-Example:
-
 ```javascript
-var red = System.color(255, 0, 0);
-var blue = System.color(0, 0, 255);
+var red = Display.color(255, 0, 0);
+var blue = Display.color(0, 0, 255);
 
-System.fillScreen(blue);
+Display.fillScreen(blue);
 ```
 
 ---
 
-## Drawing Primitives
+## Drawing Primitives (`Display.*`)
 
-### `System.drawPixel(x, y, color)`
-
-### `System.drawLine(x0, y0, x1, y1, color)`
-
-### `System.drawRect(x, y, w, h, color)`
-
-### `System.fillRect(x, y, w, h, color)`
-
-### `System.drawCircle(x, y, r, color)`
-
-### `System.fillCircle(x, y, r, color)`
-
-### `System.drawTriangle(x0, y0, x1, y1, x2, y2, color)`
-
-### `System.fillTriangle(x0, y0, x1, y1, x2, y2, color)`
-
-### `System.drawRoundRect(x, y, w, h, r, color)`
-
-### `System.fillRoundRect(x, y, w, h, r, color)`
-
-### `System.drawFastVLine(x, y, h, color)`
-
-### `System.drawFastHLine(x, y, w, color)`
+```text
+Display.drawPixel(x, y, color)
+Display.drawLine(x0, y0, x1, y1, color)
+Display.drawRect(x, y, w, h, color)
+Display.fillRect(x, y, w, h, color)
+Display.drawCircle(x, y, r, color)
+Display.fillCircle(x, y, r, color)
+Display.drawTriangle(x0, y0, x1, y1, x2, y2, color)
+Display.fillTriangle(x0, y0, x1, y1, x2, y2, color)
+Display.drawRoundRect(x, y, w, h, r, color)
+Display.fillRoundRect(x, y, w, h, r, color)
+```
 
 **Returns:** `undefined`
-
 **Description:** Hardware rendering primitives. Drawing operations are directed to the physical display unless a sprite is currently bound.
+
+> Note: `drawFastVLine`/`drawFastHLine` are **not** on `Display` — they live on `Sprite` (see §4).
 
 ---
 
-## `System.drawBMP(path, x, y)`
+## `Display.drawBMP(path, x, y)`
 
-**Params:**
-
-* `path` — string
-* `x` — integer
-* `y` — integer
-
+**Params:** `path` — string, `x`/`y` — integers
 **Returns:** `boolean`
-
 **Description:** Loads and renders a BMP image from KryonOS storage.
 
 Supported paths:
@@ -333,264 +273,162 @@ Returns `true` on successful rendering and `false` if the file is missing or uns
 
 ---
 
-# 4. SPRITES (`System.*`)
+# 4. SPRITES (`Sprite.*`)
 
 Sprites provide off-screen rendering.
 
-## `System.createSprite(w, h)`
+> Note: the sprite methods use **short names** (`create`, `delete`, `push`, `bind`) — not `createSprite`/`deleteSprite`/`pushSprite`/`bindSprite`.
 
-**Params:**
+## `Sprite.create(w, h)`
 
-* `w` — width
-* `h` — height
-
+**Params:** `w`, `h` — width/height
 **Returns:** `boolean`
-
-**Description:** Allocates a sprite buffer in RAM.
-
-The kernel attempts 16-bit color and may fall back to 8-bit color when RAM is fragmented or insufficient.
-
-Example:
+**Description:** Allocates a sprite buffer in RAM. The kernel attempts 16-bit color and may fall back to 8-bit color when RAM is fragmented or insufficient.
 
 ```javascript
-if (System.createSprite(240, 32)) {
-    System.bindSprite(true);
+if (Sprite.create(240, 32)) {
+    Sprite.bind(true);
 
     // Draw into sprite
 
-    System.bindSprite(false);
-    System.pushSprite(0, 0);
+    Sprite.bind(false);
+    Sprite.push(0, 0);
 
-    System.deleteSprite();
+    Sprite.delete();
 }
 ```
 
-Large full-screen buffers should be avoided on ESP32 hardware.
-
-A 240×320 16-bit framebuffer requires approximately 153.6 KB.
-
-Use smaller sliced buffers whenever possible.
+Large full-screen buffers should be avoided on ESP32 hardware. A 240×320 16-bit framebuffer requires approximately 153.6 KB. Use smaller sliced buffers whenever possible.
 
 ---
 
-## `System.bindSprite(enable)`
+## `Sprite.bind(enable)`
 
-**Params:**
-
-* `enable` — boolean
-
+**Params:** `enable` — boolean
 **Returns:** `undefined`
-
 **Description:** Enables or disables drawing into the active sprite.
 
 ```javascript
-System.bindSprite(true);
-
+Sprite.bind(true);
 // Drawing goes to sprite
-
-System.bindSprite(false);
-
+Sprite.bind(false);
 // Drawing goes directly to TFT
 ```
 
 ---
 
-## `System.pushSprite(x, y)`
+## `Sprite.push(x, y)`
 
-**Params:**
-
-* `x`
-* `y`
-
+**Params:** `x`, `y`
 **Returns:** `undefined`
-
 **Description:** Copies the active sprite to the physical TFT display.
 
 ---
 
-## `System.deleteSprite()`
+## `Sprite.delete()`
 
 **Params:** none
-
 **Returns:** `undefined`
-
-**Description:** Releases the active sprite and frees its RAM.
-
-Always call this when a sprite is no longer required.
+**Description:** Releases the active sprite and frees its RAM. Always call this when a sprite is no longer required.
 
 ---
 
-# 5. TEXT & FONTS (`System.*`)
-
-## `System.drawString(str, x, y, font)`
-
-**Params:**
-
-* `str` — string
-* `x` — integer
-* `y` — integer
-* `font` — optional integer
+## `Sprite.drawFastVLine(x, y, h, color)` / `Sprite.drawFastHLine(x, y, w, color)`
 
 **Returns:** `undefined`
+**Description:** Fast vertical/horizontal line primitives, exposed on the `Sprite` object.
 
+---
+
+# 5. TEXT & FONTS (`Display.*`)
+
+## `Display.drawString(str, x, y, font)`
+
+**Params:** `str` — string, `x`/`y` — integers, `font` — optional integer
+**Returns:** `undefined`
 **Description:** Draws text on the physical display or active sprite.
 
-Default font:
-
-```text
-2
-```
-
-Available hardware font selections:
-
-```text
-1
-2
-4
-```
-
-Example:
+Default font: `2`. Available hardware font selections: `1`, `2`, `4`.
 
 ```javascript
-System.drawString("Hello KryonOS!", 10, 20);
-System.drawString("Large Text", 10, 60, 4);
+Display.drawString("Hello KryonOS!", 10, 20);
+Display.drawString("Large Text", 10, 60, 4);
 ```
 
 ---
 
-## `System.setTextColor(fg, bg)`
+## `Display.setTextColor(fg, bg)`
 
-**Params:**
-
-* `fg` — foreground RGB565 color
-* `bg` — optional background RGB565 color
-
+**Params:** `fg` — foreground RGB565 color, `bg` — optional background RGB565 color
 **Returns:** `undefined`
 
-**Description:** Configures text foreground and background colors.
-
-Example:
-
 ```javascript
-System.setTextColor(0xFFFF, 0x001F);
+Display.setTextColor(0xFFFF, 0x001F);
 ```
 
 ---
 
-## `System.setTextSize(size)`
+## `Display.setTextSize(size)`
 
-**Params:**
-
-* `size` — integer scale factor
-
+**Params:** `size` — integer scale factor
 **Returns:** `undefined`
 
-**Description:** Changes the text rendering scale.
-
-Example:
-
 ```javascript
-System.setTextSize(2);
+Display.setTextSize(2);
 ```
 
 ---
 
-# 6. GPIO & HARDWARE (`System.gpio.*`)
+# 6. GPIO & HARDWARE (`GPIO.*`)
 
 ## Constants
 
 ```javascript
-System.gpio.INPUT
-System.gpio.OUTPUT
-System.gpio.INPUT_PULLUP
+GPIO.INPUT
+GPIO.OUTPUT
+GPIO.INPUT_PULLUP
 
-System.gpio.HIGH
-System.gpio.LOW
+GPIO.HIGH
+GPIO.LOW
 ```
 
 ---
 
-## `System.gpio.pinMode(pin, mode)`
-
-Configures GPIO pin mode.
+## `GPIO.pinMode(pin, mode)`
 
 ```javascript
-System.gpio.pinMode(2, System.gpio.OUTPUT);
+GPIO.pinMode(2, GPIO.OUTPUT);
 ```
 
----
-
-## `System.gpio.digitalWrite(pin, value)`
-
-Writes a digital HIGH/LOW value.
+## `GPIO.digitalWrite(pin, value)`
 
 ```javascript
-System.gpio.digitalWrite(2, System.gpio.HIGH);
+GPIO.digitalWrite(2, GPIO.HIGH);
 ```
 
----
+## `GPIO.digitalRead(pin)`
 
-## `System.gpio.digitalRead(pin)`
+**Returns:** `integer` — `1 = HIGH`, `0 = LOW`
 
-**Returns:** `integer`
+## `GPIO.analogRead(pin)`
 
-Returns:
+**Returns:** `integer` — ESP32 ADC value, `0 - 4095`
 
-```text
-1 = HIGH
-0 = LOW
-```
+## `GPIO.analogWrite(pin, value)`
 
----
+**Params:** `pin`, `value` (0-255)
+**Description:** Uses hardware PWM.
 
-## `System.gpio.analogRead(pin)`
+## `GPIO.pulseIn(pin, state, timeout)`
 
-**Returns:** `integer`
-
-ESP32 ADC value:
-
-```text
-0 - 4095
-```
+**Params:** `pin`, `state`, `timeout` — optional microseconds (default `1,000,000 µs`)
+**Returns:** `integer` — measures hardware pulse duration in microseconds.
 
 ---
 
-## `System.gpio.analogWrite(pin, value)`
+# 7. KEYBOARD & INPUT (`Input.*` / `Keyboard.*`)
 
-**Params:**
-
-* `pin`
-* `value` — 0-255
-
-Uses hardware PWM.
-
----
-
-## `System.gpio.pulseIn(pin, state, timeout)`
-
-**Params:**
-
-* `pin`
-* `state`
-* `timeout` — optional microseconds
-
-**Returns:** `integer`
-
-Measures hardware pulse duration in microseconds.
-
-Default timeout:
-
-```text
-1,000,000 µs
-```
-
----
-
-# 7. KEYBOARD & INPUT (`System.*`)
-
-## `System.getKey()`
-
-**Params:** none
+## `Input.getKey()`
 
 **Returns:** `string`
 
@@ -608,14 +446,10 @@ Possible values:
 "NONE"
 ```
 
-**Description:** Reads the current keyboard/navigation state.
-
-`ESC` is recognized as an application exit action.
-
-Example:
+**Description:** Reads the current keyboard/navigation state. `ESC` is recognized as an application exit action.
 
 ```javascript
-var key = System.getKey();
+var key = Input.getKey();
 
 if (key === "ENTER") {
     // Confirm
@@ -628,33 +462,22 @@ if (key === "ESC") {
 
 ---
 
-## `System.isKeyPressed(keyName)`
+## `Input.isKeyPressed(keyName)`
 
-**Params:**
-
-* `keyName` — string
-
+**Params:** `keyName` — string
 **Returns:** `boolean`
 
-Checks whether a specific key is currently pressed.
-
-Example:
-
 ```javascript
-if (System.isKeyPressed("ENTER")) {
+if (Input.isKeyPressed("ENTER")) {
     // Enter is pressed
 }
 ```
 
 ---
 
-## `System.getKeyInput()`
-
-**Params:** none
+## `Input.getKeyInput()`
 
 **Returns:** object
-
-Structure:
 
 ```javascript
 {
@@ -664,84 +487,50 @@ Structure:
 }
 ```
 
-Fields:
-
-* `key` — key name
-* `code` — numeric key code
-* `pressed` — boolean
-
-Example:
-
 ```javascript
-var input = System.getKeyInput();
+var input = Input.getKeyInput();
 
 if (input.pressed) {
-    System.print(input.key);
+    Harix.print(input.key);
 }
 ```
 
 ---
 
-## `System.getChar()`
+## `Input.getChar()`
 
-**Params:** none
-
-**Returns:** `string`
-
-Returns a translated keyboard character.
-
-Depending on the keyboard event, it can return:
-
-* Normal characters
-* Tab
-* Newline
-* Backspace
-* Empty string when no character is available
-
-Example:
+**Returns:** `string` — a translated keyboard character (normal characters, tab, newline, backspace, or empty string when nothing is available).
 
 ```javascript
-var ch = System.getChar();
+var ch = Input.getChar();
 
 if (ch !== "") {
-    System.print(ch);
+    Harix.print(ch);
 }
 ```
 
-For application exit handling, `System.getKey()` should be preferred for detecting `ESC`.
+For application exit handling, `Input.getKey()` should be preferred for detecting `ESC`.
 
 ---
 
-## `System.prompt(msg, initialText)`
+## `Keyboard.prompt(msg, initialText)`
 
-**Params:**
-
-* `msg` — optional string
-* `initialText` — optional string
-
+**Params:** `msg` — optional string, `initialText` — optional string
 **Returns:** `string`
+**Description:** Opens the native KryonOS on-screen keyboard/text input interface. JavaScript execution is suspended while it is active.
 
-**Description:** Opens the native KryonOS on-screen keyboard/text input interface.
-
-Example:
+> Note: this lives on `Keyboard`, **not** on `Input`.
 
 ```javascript
-var name = System.prompt("Enter your name", "");
-
-System.print(name);
+var name = Keyboard.prompt("Enter your name", "");
+Harix.print(name);
 ```
-
-The JavaScript execution is suspended while the native input interface is active.
 
 ---
 
-## `System.getTouch()`
-
-**Params:** none
+## `Input.getTouch()`
 
 **Returns:** object
-
-Structure:
 
 ```javascript
 {
@@ -750,12 +539,6 @@ Structure:
     touched: true
 }
 ```
-
-Fields:
-
-* `x` — X coordinate
-* `y` — Y coordinate
-* `touched` — boolean
 
 When no touch is active:
 
@@ -769,130 +552,65 @@ When no touch is active:
 
 ### System Exit Area
 
-The top-right region is reserved for application/OS exit.
-
-Recommended check:
+The top-right region is reserved for application/OS exit:
 
 ```javascript
-var touch = System.getTouch();
+var touch = Input.getTouch();
 
 if (touch.touched &&
-    touch.x >= System.screenWidth() - 40 &&
+    touch.x >= Display.screenWidth() - 40 &&
     touch.y <= 40) {
 
     break;
 }
 ```
 
-Applications should poll `System.getTouch()` continuously when running a touch interface.
+Applications should poll `Input.getTouch()` continuously when running a touch interface, but should otherwise implement their own UI hit-testing with on-screen virtual buttons rather than free-form touch zones.
 
 ---
 
-# 8. SYSTEM UTILITIES & HARDWARE INFORMATION
+# 8. SYSTEM UTILITIES & HARDWARE INFORMATION (`Harix.*`)
 
-## `System.millis()`
+## `Harix.millis()` / `Harix.micros()`
 
-**Returns:** `integer`
+**Returns:** `integer` — system uptime in milliseconds / microseconds. The 32-bit microsecond timer rolls over approximately every 71 minutes.
 
-Returns system uptime in milliseconds.
+## `Harix.delay(ms)`
 
----
-
-## `System.micros()`
-
-**Returns:** `integer`
-
-Returns system uptime in microseconds.
-
-The 32-bit timer rolls over approximately every 71 minutes.
-
----
-
-## `System.delay(ms)`
-
-**Params:**
-
-* `ms` — integer milliseconds
-
+**Params:** `ms` — integer milliseconds
 **Returns:** `undefined`
-
-Pauses JavaScript execution.
-
-The delay also gives the kernel an opportunity to perform garbage collection.
-
-This should be used inside long-running loops.
-
-Example:
+**Description:** Pauses JavaScript execution and gives the kernel an opportunity to perform garbage collection. Use inside long-running loops.
 
 ```javascript
 while (true) {
     // Application logic
-
-    System.delay(10);
+    Harix.delay(10);
 }
 ```
 
----
+## `Harix.delayMicroseconds(us)`
 
-## `System.delayMicroseconds(us)`
+**Description:** High-resolution blocking delay. Unlike `Harix.delay()`, this should not be relied upon for garbage collection.
 
-**Params:**
+## `Harix.print(msg)`
 
-* `us` — integer microseconds
-
-**Returns:** `undefined`
-
-Provides a high-resolution blocking delay.
-
-Unlike `System.delay()`, this should not be relied upon for garbage collection.
-
----
-
-## `System.print(msg)`
-
-**Params:**
-
-* `msg` — string/value
-
-**Returns:** `undefined`
-
-Prints diagnostic information to the USB Serial Monitor.
-
-Default baud rate:
-
-```text
-115200
-```
-
-Example:
+**Description:** Prints diagnostic information to the USB Serial Monitor. Default baud rate: `115200`.
 
 ```javascript
-System.print("Application started");
+Harix.print("Application started");
 ```
 
----
+## `Harix.getTemperature()`
 
-## `System.getTemperature()`
+**Returns:** `float` — ESP32 internal temperature in °C when supported.
 
-**Returns:** `float`
-
-Returns ESP32 internal temperature in degrees Celsius when supported.
-
----
-
-## `System.hasTemperatureSensor()`
+## `Harix.hasTemperatureSensor()`
 
 **Returns:** `boolean`
 
-Returns `true` when the installed ESP32 chip supports the internal temperature sensor.
-
----
-
-## `System.getInfo()`
+## `Harix.getInfo()`
 
 **Returns:** object
-
-Structure:
 
 ```javascript
 {
@@ -909,413 +627,150 @@ Structure:
 }
 ```
 
-Fields:
+```javascript
+var info = Harix.getInfo();
 
-* `totalRAM`
-* `freeRAM`
-* `minFreeRAM`
-* `maxAllocRAM`
-* `cpuFreqMHz`
-* `chipModel`
-* `chipCores`
-* `chipRevision`
-* `flashSize`
-* `uptimeMs`
+Harix.print("Free RAM: " + info.freeRAM);
+Harix.print("CPU: " + info.cpuFreqMHz + " MHz");
+```
 
-Example:
+## `Harix.restart()`
+
+**Description:** Immediately reboots the ESP32.
 
 ```javascript
-var info = System.getInfo();
-
-System.print("Free RAM: " + info.freeRAM);
-System.print("CPU: " + info.cpuFreqMHz + " MHz");
+Harix.restart();
 ```
 
 ---
 
-## `System.restart()`
+# 9. TIME, DATE & NETWORK
 
-**Params:** none
+## `Harix.getTime()`
 
-**Returns:** `undefined`
+**Returns:** `string` — OS-formatted local time (12/24-hour preference).
 
-Immediately reboots the ESP32.
+## `Harix.getSeconds()`
 
-```javascript
-System.restart();
-```
+**Returns:** `integer` — `0 - 59`
 
----
+## `Harix.getDate()`
 
-# 9. TIME, DATE & NETWORK (`System.*`)
+**Returns:** `string` — local date in OS format, e.g. `"15/06/2026"`.
 
-## `System.getTime()`
+## `Harix.getYear()`
+
+**Returns:** `integer` — four-digit year.
+
+## `Harix.getMonth()`
+
+**Returns:** `integer` — `1 - 12`
+
+## `Harix.getDay()`
+
+**Returns:** `integer` — `1 - 31`
+
+## `Harix.getTimezone()`
 
 **Returns:** `string`
 
-Returns the OS-formatted local time according to the configured 12/24-hour preference.
+## `Harix.getOSVersion()`
 
----
+**Returns:** `string` — KryonOS version.
 
-## `System.getSeconds()`
+## `Harix.getAPILevel()`
 
-**Returns:** `integer`
+**Returns:** `integer` — current KryonOS JavaScript API level (`2`).
 
-Returns current seconds:
+## `Network.getIPAddress()`
 
-```text
-0 - 59
-```
+**Returns:** `string` — ESP32 local IP address when WiFi is connected.
 
----
-
-## `System.getDate()`
-
-**Returns:** `string`
-
-Returns local date in OS format.
-
-Example:
-
-```text
-15/06/2026
-```
-
----
-
-## `System.getYear()`
-
-**Returns:** `integer`
-
-Returns four-digit year.
-
----
-
-## `System.getMonth()`
-
-**Returns:** `integer`
-
-Returns month:
-
-```text
-1 - 12
-```
-
----
-
-## `System.getDay()`
-
-**Returns:** `integer`
-
-Returns day of month:
-
-```text
-1 - 31
-```
-
----
-
-## `System.getTimezone()`
-
-**Returns:** `string`
-
-Returns configured timezone.
-
----
-
-## `System.getOSVersion()`
-
-**Returns:** `string`
-
-Returns KryonOS version.
-
-Example:
-
-```javascript
-var version = System.getOSVersion();
-```
-
----
-
-## `System.getAPILevel()`
-
-**Returns:** `integer`
-
-Returns current KryonOS JavaScript API level.
-
----
-
-## `System.getIPAddress()`
-
-**Returns:** `string`
-
-Returns the ESP32 local IP address when WiFi is connected.
-
----
-
-## `System.isWiFiActive()`
+## `Network.isWiFiActive()`
 
 **Returns:** `boolean`
 
-Returns `true` when WiFi is active/connected.
-
 ---
 
-# 10. FILE SYSTEM (`FS.*`)
+# 10. FILE SYSTEM (`FileSystem.*`)
 
 KryonOS provides a unified filesystem interface.
 
 Storage prefixes:
 
 ```text
-/local/
+/local/   -> internal flash storage
+/sd/      -> SD card storage
 ```
 
-Internal flash storage.
+> Note: the existence check is `FileSystem.fileExists(path)`, **not** `exists(path)`.
 
-```text
-/sd/
-```
+## `FileSystem.fileExists(path)`
 
-SD card storage.
+**Returns:** `boolean` — checks whether a file or directory exists.
 
----
+## `FileSystem.readTextFile(path)`
 
-## `FS.exists(path)`
+**Returns:** `string` or `null` — reads an entire text file into memory. Use only for reasonably small files.
 
-**Returns:** `boolean`
+## `FileSystem.writeTextFile(path, content)`
 
-Checks whether a file or directory exists.
+**Returns:** `boolean` — writes text content to a file. Existing content is replaced.
 
----
+## `FileSystem.appendTextFile(path, content)`
 
-## `FS.readTextFile(path)`
+**Returns:** `boolean` — appends text to an existing file.
 
-**Returns:** `string` or `null`
-
-Reads an entire text file into memory.
-
-Use only for reasonably small files.
-
----
-
-## `FS.writeTextFile(path, content)`
+## `FileSystem.deleteFile(path)`
 
 **Returns:** `boolean`
 
-Writes text content to a file.
+## `FileSystem.renameFile(from, to)`
 
-Existing content is replaced.
+**Returns:** `boolean` — renames or moves a file within the same storage partition.
 
----
+## `FileSystem.listDir(path)`
 
-## `FS.appendTextFile(path, content)`
-
-**Returns:** `boolean`
-
-Appends text to an existing file.
-
----
-
-## `FS.deleteFile(path)`
-
-**Returns:** `boolean`
-
-Deletes a file.
-
----
-
-## `FS.renameFile(from, to)`
-
-**Returns:** `boolean`
-
-Renames or moves a file within the same storage partition.
-
----
-
-## `FS.listDir(path)`
-
-**Returns:** `Array`
-
-Returns an array of file/directory paths.
-
-JavaScript arrays are **0-indexed**.
-
-Example:
+**Returns:** `Array` — file/directory paths. JavaScript arrays are 0-indexed.
 
 ```javascript
-var files = FS.listDir("/local");
+var files = FileSystem.listDir("/local");
 
 for (var i = 0; i < files.length; i++) {
-    System.print(files[i]);
+    Harix.print(files[i]);
 }
 ```
 
----
+## `FileSystem.mkdir(path)` / `FileSystem.rmdir(path)`
 
-## `FS.mkdir(path)`
+**Returns:** `boolean` — create / remove an (empty) directory.
 
-**Returns:** `boolean`
-
-Creates a directory.
-
----
-
-## `FS.rmdir(path)`
+## `FileSystem.isDirectory(path)` / `FileSystem.isFile(path)`
 
 **Returns:** `boolean`
 
-Removes an empty directory.
+## `FileSystem.getFileSize(path)`
+
+**Returns:** `integer` — file size in bytes.
+
+## `FileSystem.getTotalSpace(drive)` / `FileSystem.getUsedSpace(drive)` / `FileSystem.getFreeSpace(drive)`
+
+**Params:** `drive` — `"/local"` or `"/sd"`
+**Returns:** `integer` — bytes.
+
+## `FileSystem.getFileMD5(path)`
+
+**Returns:** `string` — MD5 hash, e.g. `"d41d8cd98f00b204e9800998ecf8427e"`.
+
+## `FileSystem.mountSD()` / `FileSystem.unmountSD()`
+
+**Returns:** `boolean` (or `undefined` for `unmountSD`) — mount/unmount the SD card filesystem.
 
 ---
 
-## `FS.isDirectory(path)`
+# 11. BINARY FILES
 
-**Returns:** `boolean`
-
-Checks whether a path is a directory.
-
----
-
-## `FS.isFile(path)`
-
-**Returns:** `boolean`
-
-Checks whether a path is a file.
-
----
-
-## `FS.getFileSize(path)`
-
-**Returns:** `integer`
-
-Returns file size in bytes.
-
----
-
-## `FS.getTotalSpace(drive)`
-
-**Returns:** `integer`
-
-Returns total storage capacity in bytes.
-
-Valid drives:
-
-```javascript
-"/local"
-"/sd"
-```
-
----
-
-## `FS.getUsedSpace(drive)`
-
-**Returns:** `integer`
-
-Returns used storage space in bytes.
-
----
-
-## `FS.getFreeSpace(drive)`
-
-**Returns:** `integer`
-
-Returns available storage space in bytes.
-
----
-
-## `FS.getFileMD5(path)`
-
-**Returns:** `string`
-
-Returns the MD5 hash of the specified file.
-
-Example result:
-
-```text
-d41d8cd98f00b204e9800998ecf8427e
-```
-
----
-
-## `FS.mountSD()`
-
-**Returns:** `boolean`
-
-Mounts the SD card filesystem.
-
-Returns `true` when mounting succeeds.
-
----
-
-## `FS.unmountSD()`
-
-**Returns:** `boolean` or `undefined`
-
-Unmounts the SD card filesystem.
-
----
-
-# 11. BINARY FILES (`FS.*`)
-
-KryonOS JavaScript supports raw binary file access.
-
-Binary data should be treated as byte-oriented data rather than text.
-
-## `FS.readBinaryFile(path)`
-
-**Params:**
-
-* `path` — string
-
-**Returns:**
-
-* binary data/string when successful
-* `null` when the file does not exist or cannot be read
-
-**Description:** Reads the complete file as raw binary data.
-
-Example:
-
-```javascript
-var data = FS.readBinaryFile("/local/data.bin");
-
-if (data !== null) {
-    System.print("Binary file loaded");
-}
-```
-
-An existing empty file returns an empty string.
-
-The returned data length corresponds to the number of bytes read.
-
-> Avoid loading large binary files into JavaScript memory because the JavaScript heap is limited.
-
----
-
-## `FS.writeBinaryFile(path, data)`
-
-**Params:**
-
-* `path` — string
-* `data` — binary string/data
-
-**Returns:** `boolean`
-
-Writes raw binary data to storage.
-
-Example:
-
-```javascript
-var data = "\x01\x02\x03\xFF";
-
-var success = FS.writeBinaryFile(
-    "/local/test.bin",
-    data
-);
-```
-
-Empty data is not written and returns `false`.
+> **Not currently implemented.** The previous revision of this document described `FS.readBinaryFile()` / `FS.writeBinaryFile()`. These are **not present** in the current native bindings (`JSBindings::init`) — there is no binary file read/write exposed to JavaScript yet. Treat any code relying on them as unsupported until they are added to the bindings. This mirrors the current state of the Wren bindings, where the same two methods are also missing.
 
 ---
 
@@ -1323,71 +778,60 @@ Empty data is not written and returns `false`.
 
 Applications should not assume that the display is always 240×320.
 
-Use:
-
 ```javascript
-var width = System.screenWidth();
-var height = System.screenHeight();
-```
-
-Example:
-
-```javascript
-var width = System.screenWidth();
-var height = System.screenHeight();
+var width = Display.screenWidth();
+var height = Display.screenHeight();
 
 if (height >= 200) {
     // 240x320-style layout
-    System.drawString("Tall Display", 10, 20);
+    Display.drawString("Tall Display", 10, 20);
 } else {
     // 240x135-style layout
-    System.drawString("Wide/Compact Display", 10, 20);
+    Display.drawString("Wide/Compact Display", 10, 20);
 }
 ```
 
 For centered text:
 
 ```javascript
-var width = System.screenWidth();
+var width = Display.screenWidth();
 
 var text = "KryonOS";
 var textWidth = 7 * text.length;
 
 var x = (width - textWidth) / 2;
 
-System.drawString(text, x, 20);
+Display.drawString(text, x, 20);
 ```
 
 ---
 
 # 13. RECOMMENDED APPLICATION TEMPLATE
 
-A basic KryonOS JavaScript application should follow this structure:
-
 ```javascript
-var width = System.screenWidth();
-var height = System.screenHeight();
+var width = Display.screenWidth();
+var height = Display.screenHeight();
 
 var BLUE = 0x001F;
 var WHITE = 0xFFFF;
 var RED = 0xF800;
 
-System.fillScreen(BLUE);
-System.setTextColor(WHITE, BLUE);
+Display.fillScreen(BLUE);
+Display.setTextColor(WHITE, BLUE);
 
-System.drawString("KryonOS JavaScript", 10, 15);
+Display.drawString("KryonOS JavaScript", 10, 15);
 
 if (height >= 200) {
-    System.drawString("240x320 Layout", 10, 50);
+    Display.drawString("240x320 Layout", 10, 50);
 } else {
-    System.drawString("240x135 Layout", 10, 50);
+    Display.drawString("240x135 Layout", 10, 50);
 }
 
 // Application loop
 while (true) {
 
     // Touch must be polled
-    var touch = System.getTouch();
+    var touch = Input.getTouch();
 
     if (touch.touched &&
         touch.x >= width - 40 &&
@@ -1397,169 +841,164 @@ while (true) {
     }
 
     // Keyboard must also be polled
-    var key = System.getKey();
+    var key = Input.getKey();
 
     if (key === "ESC") {
         break;
     }
 
     // Character input
-    var character = System.getChar();
+    var character = Input.getChar();
 
     // Application logic can process character here.
 
     // Allows GC and prevents CPU starvation
-    System.delay(10);
+    Harix.delay(10);
 }
 
 // Application cleanup
-System.fillScreen(BLUE);
+Display.fillScreen(BLUE);
 ```
 
 ---
 
 # 14. API SUMMARY
 
-## Display
+## Display (`Display.*`)
 
 ```text
-System.fillScreen()
-System.screenWidth()
-System.screenHeight()
-System.color()
-System.drawPixel()
-System.drawLine()
-System.drawRect()
-System.fillRect()
-System.drawCircle()
-System.fillCircle()
-System.drawTriangle()
-System.fillTriangle()
-System.drawRoundRect()
-System.fillRoundRect()
-System.drawFastVLine()
-System.drawFastHLine()
-System.drawBMP()
+Display.fillScreen()
+Display.screenWidth()
+Display.screenHeight()
+Display.color()
+Display.drawPixel()
+Display.drawLine()
+Display.drawRect()
+Display.fillRect()
+Display.drawCircle()
+Display.fillCircle()
+Display.drawTriangle()
+Display.fillTriangle()
+Display.drawRoundRect()
+Display.fillRoundRect()
+Display.drawBMP()
+Display.drawString()
+Display.setTextColor()
+Display.setTextSize()
 ```
 
-## Sprites
+## Sprites (`Sprite.*`)
 
 ```text
-System.createSprite()
-System.deleteSprite()
-System.pushSprite()
-System.bindSprite()
+Sprite.create()
+Sprite.delete()
+Sprite.push()
+Sprite.bind()
+Sprite.drawFastVLine()
+Sprite.drawFastHLine()
 ```
 
-## Text
+## Input (`Input.*` / `Keyboard.*`)
 
 ```text
-System.drawString()
-System.setTextColor()
-System.setTextSize()
+Input.getKey()
+Input.isKeyPressed()
+Input.getKeyInput()
+Input.getChar()
+Input.getTouch()
+Keyboard.prompt()
 ```
 
-## Input
+## GPIO (`GPIO.*`)
 
 ```text
-System.getKey()
-System.isKeyPressed()
-System.getKeyInput()
-System.getChar()
-System.prompt()
-System.getTouch()
+GPIO.pinMode()
+GPIO.digitalWrite()
+GPIO.digitalRead()
+GPIO.analogRead()
+GPIO.analogWrite()
+GPIO.pulseIn()
 ```
 
-## GPIO
+## System (`Harix.*`)
 
 ```text
-System.gpio.pinMode()
-System.gpio.digitalWrite()
-System.gpio.digitalRead()
-System.gpio.analogRead()
-System.gpio.analogWrite()
-System.gpio.pulseIn()
+Harix.millis()
+Harix.micros()
+Harix.delay()
+Harix.delayMicroseconds()
+Harix.print()
+Harix.getTemperature()
+Harix.hasTemperatureSensor()
+Harix.getInfo()
+Harix.restart()
+Harix.getTime()
+Harix.getSeconds()
+Harix.getDate()
+Harix.getYear()
+Harix.getMonth()
+Harix.getDay()
+Harix.getTimezone()
+Harix.getOSVersion()
+Harix.getAPILevel()
 ```
 
-## System
+## Network (`Network.*`)
 
 ```text
-System.millis()
-System.micros()
-System.delay()
-System.delayMicroseconds()
-System.print()
-System.getTemperature()
-System.hasTemperatureSensor()
-System.getInfo()
-System.restart()
+Network.getIPAddress()
+Network.isWiFiActive()
 ```
 
-## Time & Network
+## File System (`FileSystem.*`)
 
 ```text
-System.getTime()
-System.getSeconds()
-System.getDate()
-System.getYear()
-System.getMonth()
-System.getDay()
-System.getTimezone()
-System.getOSVersion()
-System.getAPILevel()
-System.getIPAddress()
-System.isWiFiActive()
+FileSystem.fileExists()
+FileSystem.readTextFile()
+FileSystem.writeTextFile()
+FileSystem.appendTextFile()
+FileSystem.deleteFile()
+FileSystem.renameFile()
+FileSystem.listDir()
+FileSystem.mkdir()
+FileSystem.rmdir()
+FileSystem.isDirectory()
+FileSystem.isFile()
+FileSystem.getFileSize()
+FileSystem.getTotalSpace()
+FileSystem.getUsedSpace()
+FileSystem.getFreeSpace()
+FileSystem.getFileMD5()
+FileSystem.mountSD()
+FileSystem.unmountSD()
 ```
 
-## File System
-
-```text
-FS.exists()
-FS.readTextFile()
-FS.writeTextFile()
-FS.appendTextFile()
-FS.deleteFile()
-FS.renameFile()
-FS.listDir()
-FS.mkdir()
-FS.rmdir()
-FS.isDirectory()
-FS.isFile()
-FS.getFileSize()
-FS.getTotalSpace()
-FS.getUsedSpace()
-FS.getFreeSpace()
-FS.getFileMD5()
-FS.mountSD()
-FS.unmountSD()
-FS.readBinaryFile()
-FS.writeBinaryFile()
-```
+*(No binary file APIs yet — see §11.)*
 
 ---
 
 # 15. IMPORTANT APPLICATION RULES
 
-1. **Always poll input in long-running applications.**
-2. Applications using touch should call `System.getTouch()` continuously.
-3. Applications using keyboard should call `System.getKey()` continuously.
-4. `System.getChar()` is available for character-oriented keyboard input.
+1. Always poll input in long-running applications.
+2. Applications using touch should call `Input.getTouch()` continuously — and should use on-screen virtual buttons with hit-testing rather than free-form touch zones.
+3. Applications using keyboard should call `Input.getKey()` continuously.
+4. `Input.getChar()` is available for character-oriented keyboard input.
 5. `ESC` is the standard keyboard exit action.
 6. The top-right touchscreen area is reserved for exiting the application.
-7. Long-running loops must contain `System.delay(10)` or a similar delay.
+7. Long-running loops must contain `Harix.delay(10)` or a similar delay.
 8. Do not allocate unnecessarily large JavaScript arrays or strings.
 9. Avoid full-screen sprites on memory-constrained ESP32 devices.
-10. Always release sprites using `System.deleteSprite()` when finished.
-11. Use `System.screenWidth()` and `System.screenHeight()` for responsive layouts.
+10. Always release sprites using `Sprite.delete()` when finished.
+11. Use `Display.screenWidth()` and `Display.screenHeight()` for responsive layouts.
 12. Prefer sliced rendering for large graphics.
 13. Use `/local/` for internal storage and `/sd/` for SD card storage.
-14. Use binary file APIs for non-text files.
+14. Binary file APIs are not yet implemented — see §11.
 15. Use ES5-compatible JavaScript syntax for maximum KryonOS compatibility.
 
 ---
 
-**Document Version:** 2.0
+**Document Version:** 3.0 (corrected against `JSBindings::init`)
 **Target:** KryonOS JavaScript Runtime / HarixKernel
 **Platform:** ESP32
 **Runtime:** Duktape 2.x
-**API Level:** 1
+**API Level:** 2

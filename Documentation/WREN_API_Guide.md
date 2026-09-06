@@ -4,7 +4,7 @@
 
 **Runtime:** Wren
 
-**KryonOS Wren API Level:** 1
+**KryonOS Wren API Level:** 2
 
 **Language:** Wren
 
@@ -31,12 +31,26 @@ var value = 10
 var name = "KryonOS"
 ```
 
-Functions:
+Wren has **no top-level function declarations** (there is no `fn` keyword). Reusable blocks of code are written as closures using `Fn.new`:
 
 ```wren
-fn add(a, b) {
+var add = Fn.new { |a, b|
     return a + b
 }
+
+Harix.print(add.call(2, 3))
+```
+
+Simple one-off logic can also just live inside a method of a class, which is the more common pattern in KryonOS apps:
+
+```wren
+class MathUtil {
+    static add(a, b) {
+        return a + b
+    }
+}
+
+Harix.print(MathUtil.add(2, 3))
 ```
 
 Classes:
@@ -81,6 +95,8 @@ var value = 10;
 if (value === 10) {
     console.log("OK");
 }
+
+function test() {}
 ```
 
 ### Wren
@@ -90,6 +106,10 @@ var value = 10
 
 if (value == 10) {
     Harix.print("OK")
+}
+
+var test = Fn.new {
+    // ...
 }
 ```
 
@@ -105,6 +125,7 @@ value === 10
 value !== 20
 
 function test() {}
+fn test() {}
 ```
 
 Use Wren syntax instead:
@@ -116,8 +137,12 @@ var name = "KryonOS"
 value == 10
 value != 20
 
-fn test() {}
+var test = Fn.new {
+    // ...
+}
 ```
+
+> **Note:** the actual HarixKernel Wren parser does not accept `fn` as a top-level function declaration either. Reusable logic must be defined inside a class (as a method) or as a closure via `Fn.new { |args| ... }`.
 
 ---
 
@@ -543,29 +568,17 @@ if (success) {
 }
 ```
 
-Returns:
-
-```text
-true
-```
-
-when rendering succeeds.
-
-Returns:
-
-```text
-false
-```
-
-when the file does not exist or the image is unsupported.
+Returns `true` when rendering succeeds, and `false` when the file does not exist or the image is unsupported.
 
 ---
 
 # 11. SPRITES
 
-Sprites provide off-screen rendering.
+Sprites provide off-screen rendering. Sprite functionality is provided by the `Sprite` class.
 
-## `Sprite.createSprite(w, h)`
+> **Correction:** the underlying native bindings register the foreign methods as `create`, `delete`, `push` and `bind` (not `createSprite`, `deleteSprite`, `pushSprite`, `bindSprite`). The Wren-facing declarations and all calls must use these short names.
+
+## `Sprite.create(w, h)`
 
 **Parameters:**
 
@@ -596,18 +609,18 @@ Large full-screen sprites should be avoided.
 
 ---
 
-## `Sprite.bindSprite(enable)`
+## `Sprite.bind(enable)`
 
 **Parameters:**
 
 * `enable` — boolean
 
-Enables or disables sprite rendering.
+Enables or disables sprite rendering. While bound, drawing operations on `Display.*` target the sprite buffer instead of the physical screen.
 
 Example:
 
 ```wren
-Sprite.bindSprite(true)
+Sprite.bind(true)
 
 Display.fillRect(
     0, 0,
@@ -615,31 +628,31 @@ Display.fillRect(
     0xF800
 )
 
-Sprite.bindSprite(false)
+Sprite.bind(false)
 ```
 
 ---
 
-## `DispSpritelay.pushSprite(x, y)`
+## `Sprite.push(x, y)`
 
-Copies the active sprite to the physical TFT.
+Copies the active sprite to the physical TFT at position `(x, y)`.
 
 Example:
 
 ```wren
-Sprite.pushSprite(0, 0)
+Sprite.push(0, 0)
 ```
 
 ---
 
-## `Sprite.deleteSprite()`
+## `Sprite.delete()`
 
 Releases the active sprite and frees its RAM.
 
 Example:
 
 ```wren
-Sprite.deleteSprite()
+Sprite.delete()
 ```
 
 Applications should always release sprites when finished.
@@ -738,7 +751,7 @@ Display.setTextColor(
 )
 ```
 
-Because Wren does not use JavaScript-style optional parameters, the API should provide both foreign signatures:
+Because Wren does not support optional/overloaded parameters on a single signature, the API provides two distinct foreign methods, distinguished by arity:
 
 ```wren
 foreign static setTextColor(fg)
@@ -1075,6 +1088,23 @@ KryonOS should therefore expose additional operating-system functionality throug
 
 ---
 
+## `Harix.print(text)`
+
+**Parameters:**
+
+* `text` — value to print (string or any type that can be converted to string)
+
+Prints a line to the KryonOS log/console output. This is the standard way KryonOS apps emit debug or informational text (used instead of Wren's built-in `System.print`).
+
+Example:
+
+```wren
+Harix.print("Application started")
+Harix.print(Harix.getFreeSpace)
+```
+
+---
+
 ## `Harix.millis()`
 
 **Returns:** integer
@@ -1141,13 +1171,7 @@ Returns the ESP32 internal temperature when supported.
 
 **Returns:** boolean
 
-Returns:
-
-```text
-true
-```
-
-when the installed ESP32 supports the internal temperature sensor.
+Returns `true` when the installed ESP32 supports the internal temperature sensor.
 
 ---
 
@@ -1321,6 +1345,8 @@ Harix.print(version)
 
 Returns the current KryonOS Wren API level.
 
+Current value: **2**.
+
 Example:
 
 ```wren
@@ -1420,7 +1446,7 @@ var content =
     )
 
 if (content != null) {
-    System.print(content)
+    Harix.print(content)
 }
 ```
 
@@ -1505,7 +1531,7 @@ var files =
     FileSystem.listDir("/local")
 
 for (var i = 0; i < files.count; i = i + 1) {
-    System.print(files[i])
+    Harix.print(files[i])
 }
 ```
 
@@ -1547,7 +1573,7 @@ Checks whether a path is a directory.
 
 ```wren
 if (FileSystem.isDirectory("/local")) {
-    System.print("Directory")
+    Harix.print("Directory")
 }
 ```
 
@@ -1561,7 +1587,7 @@ Checks whether a path is a file.
 
 ```wren
 if (FileSystem.isFile("/local/app.wren")) {
-    System.print("File")
+    Harix.print("File")
 }
 ```
 
@@ -1644,7 +1670,7 @@ Mounts the SD card filesystem.
 
 ```wren
 if (FileSystem.mountSD()) {
-    System.print("SD mounted")
+    Harix.print("SD mounted")
 }
 ```
 
@@ -1664,54 +1690,36 @@ FileSystem.unmountSD()
 
 # 22. BINARY FILES
 
-Binary data should be handled as byte-oriented data instead of text.
+> **Not implemented yet.** `FileSystem.readBinaryFile()` and `FileSystem.writeBinaryFile()` are **not** currently registered in `WrenBindings::bindForeignMethod()`. They are listed here only as a proposed extension for a future API level — do not declare or call them against the current firmware, since no native handler exists and the binding lookup will return `nullptr`.
 
----
+Binary data should be handled as byte-oriented data instead of text once implemented.
 
-## `FileSystem.readBinaryFile(path)`
+## `FileSystem.readBinaryFile(path)` *(proposed, not implemented)*
 
 **Returns:** binary data/string or null
 
-Reads an entire file as raw binary data.
-
-Example:
+Would read an entire file as raw binary data.
 
 ```wren
 var data =
     FileSystem.readBinaryFile(
         "/local/data.bin"
     )
-
-if (data != null) {
-    System.print("Binary file loaded")
-}
 ```
 
-An existing empty file returns an empty string/data object.
-
-Avoid loading large binary files because Wren memory is limited.
-
----
-
-## `FileSystem.writeBinaryFile(path, data)`
+## `FileSystem.writeBinaryFile(path, data)` *(proposed, not implemented)*
 
 **Returns:** boolean
 
-Writes raw binary data.
-
-Example:
+Would write raw binary data to a file.
 
 ```wren
-var data = "\x01\x02\x03\xFF"
-
 var success =
     FileSystem.writeBinaryFile(
         "/local/test.bin",
         data
     )
 ```
-
-Empty data should return `false`.
 
 ---
 
@@ -1804,7 +1812,7 @@ Display.drawString(
     "KryonOS Wren",
     10,
     15,
-    1,
+    1
 )
 
 if (height >= 200) {
@@ -1976,6 +1984,8 @@ Input.getTouch()
 ## System / Harix
 
 ```text
+Harix.print()
+
 Harix.millis()
 Harix.micros()
 Harix.delay()
@@ -2056,7 +2066,7 @@ FileSystem.unmountSD()
 
 ---
 
-## Binary Files
+## Binary Files (proposed, not implemented)
 
 ```text
 FileSystem.readBinaryFile()
@@ -2087,7 +2097,7 @@ FileSystem.writeBinaryFile()
 
 10. Avoid full-screen sprites on memory-constrained ESP32 devices.
 
-11. Always release sprites using `Display.deleteSprite()` when finished.
+11. Always release sprites using `Sprite.delete()` when finished.
 
 12. Use `Display.screenWidth()` and `Display.screenHeight()` for responsive layouts.
 
@@ -2097,7 +2107,7 @@ FileSystem.writeBinaryFile()
 
 15. Use `/sd/` for SD card storage.
 
-16. Use binary file APIs for non-text files.
+16. Binary file APIs (`FileSystem.readBinaryFile`/`writeBinaryFile`) are proposed but not yet implemented — do not rely on them.
 
 17. Wren syntax must be used instead of JavaScript syntax.
 
@@ -2106,6 +2116,8 @@ FileSystem.writeBinaryFile()
 19. Use Wren Maps with `map["key"]` to access returned structured data.
 
 20. Do not attempt to redefine Wren's built-in `System` class.
+
+21. There is no top-level `fn` declaration in Wren — write reusable logic as a class method or as a closure with `Fn.new { |args| ... }`.
 
 ---
 
@@ -2174,6 +2186,8 @@ uses the normalized Wren foreign signature:
 ```text
 fillRect(_,_,_,_,_)
 ```
+
+For the `Sprite` class specifically, the registered signatures are `create(_,_)`, `delete()`, `push(_,_)` and `bind(_)` — the Wren-side declarations and calls must match these exact (short) names, not `createSprite`/`deleteSprite`/`pushSprite`/`bindSprite`.
 
 ---
 
@@ -2289,7 +2303,7 @@ Display.fillScreen(BLUE)
 
 # Document Information
 
-**Document Version:** 2.0
+**Document Version:** 2.1 (corrigido a partir do código-fonte de `WrenBindings::bindForeignMethod`)
 
 **Target:** KryonOS Wren Runtime / HarixKernel
 
@@ -2297,4 +2311,4 @@ Display.fillScreen(BLUE)
 
 **Runtime:** Wren
 
-**API Level:** 1
+**API Level:** 2
