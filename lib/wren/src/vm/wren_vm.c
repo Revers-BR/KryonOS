@@ -51,7 +51,7 @@ void wrenInitConfiguration(WrenConfiguration* config)
   config->writeFn = NULL;
   config->errorFn = NULL;
   config->initialHeapSize = 32 * 1024;
-  config->minHeapSize = 16 * 1024;
+  config->minHeapSize = 3 * 1024;
   config->heapGrowthPercent = 50;
   config->userData = NULL;
 }

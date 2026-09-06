@@ -63,9 +63,9 @@ private:
 
     // Stack dedicado por engine (bytes). Ajustar conforme
     // o log de watermark do EngineTaskRunner.
-    static constexpr uint32_t kLuaTaskStackSize  = 32768;
-    static constexpr uint32_t kWrenTaskStackSize = 65536;
-    static constexpr uint32_t kJsTaskStackSize   = 32768;
+    static constexpr uint32_t kLuaTaskStackSize  =  8 * 1024;
+    static constexpr uint32_t kWrenTaskStackSize = 32 * 1024;
+    static constexpr uint32_t kJsTaskStackSize   =  16 * 1024;
 
     // --- Tratadores de Erro Internos ---
     static void checkJSError(duk_context *ctx, duk_int_t result);
