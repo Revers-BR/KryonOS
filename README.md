@@ -1,6 +1,5 @@
 # KryonOS
-KryonOS é um sistema operacional **open-source**, leve e de alta performance com interface gráfica (**GUI**), **Runtime duplo (JavaScript & Lua)** e **Emulador Web / IDE** projetado para a linha de microcontroladores ESP32. Ele oferece uma experiência completa de desktop e handhelds em sistemas embarcados, trazendo gerenciamento de arquivos, suporte a bibliotecas gráficas com double-buffering, calibração de toque, gerenciamento de bateria e arquitetura modular para suporte a múltiplos dispositivos.
-
+KryonOS é um sistema operacional **open-source**, leve e de alta performance com interface gráfica (**GUI**), **Runtime triplo (JavaScript, Lua e Wren)**
 ---
 
 ## 📷 Hardware Showcase
@@ -17,8 +16,7 @@ KryonOS é um sistema operacional **open-source**, leve e de alta performance co
 
 ## 🚀 Principais Funcionalidades
 
-* **Execução Dual (JavaScript & Lua):** Suporte nativo para rodar aplicativos JS (engine ES5 com suporte assíncrono) e scripts Lua integrados via classe `LuaBindings` para manipulação de GPIO, primitivas gráficas, entradas de teclado e sistema de arquivos.
-* **Web IDE & Emulador Integrado:** Desenvolva e teste códigos no navegador utilizando a IDE baseada em CodeMirror com autocompletar, popover de assinaturas de API (`signatures.js`) e emulador gráfico com suporte a eventos de toque.
+* **Execução Dual (JavaScript, Lua e Wren):** Suporte nativo para rodar aplicativos JS (engine ES5 com suporte assíncrono) e scripts Lua integrados via classe `LuaBindings` e Wren via classe `WrenBindings` para manipulação de GPIO, primitivas gráficas, entradas de teclado e sistema de arquivos.
 * **LauncherUI Avançado:** Interface de inicialização com suporte a gerenciamento de categorias, navegação aprimorada e atualização dinâmica de itens.
 * **Suporte Multi-Placa Nativo:** Ambientes pré-configurados no PlatformIO para **CYD (Cheap Yellow Display)**, **M5Stack Cardputer**, **LilyGO T-HMI** e **ESP32 Marauder**.
 * **Gestão de Memória com PSRAM Fallback:** Alocação dinâmica inteligente com fallback automático para PSRAM e tela *About* paginada mostrando detalhes do sistema e da memória.
@@ -232,8 +230,8 @@ esptool.py --chip esp32 --port COM3 --baud 921600 write_flash -z \
 ## 📚 Documentação & Comunidade
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Haris16-code/KryonOS)
-* [Guia de Desenvolvimento Lua & JS](./Documentation/App_Development_Guide.md) - Aprenda a criar aplicativos para o KryonOS.
-* [Documentação da API System & LuaBindings](./Documentation/JS_API_Guide.md) - Referência de métodos para GPIO, Display, Teclado e Rede.
+* [Guia de Desenvolvimento Lua, JS e Wren](./Documentation/App_Development_Guide.md) - Aprenda a criar aplicativos para o KryonOS.
+* [Documentação da API Systems](./Documentation/JS_API_Guide.md) - Referência de métodos para GPIO, Display, Teclado e Rede.
 * [KryonOS Wiki](https://github.com/Haris16-code/KryonOS/wiki) - Manuais completos de arquitetura e schematics das placas.
 * [Discussions](https://github.com/Haris16-code/KryonOS/discussions) - Tire dúvidas e compartilhe seus projetos com a comunidade.
 
