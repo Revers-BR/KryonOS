@@ -676,11 +676,10 @@ duk_ret_t JSBindings::js_getChar(duk_context *ctx) {
 duk_ret_t JSBindings::js_getTouch(duk_context *ctx) {
     uint16_t tx, ty;
     bool touched = getTouch(&tx, &ty);
-        
-    // Hidden OS Exit Button (Top Right Corner)
+    
     if (touched && tx >= 200 && ty <= 40) {
-        duk_error(ctx, DUK_ERR_ERROR, "OS_EXIT");
-        return 0; // Unreachable, but good practice
+        duk_push_null(ctx);  // Retorna null em vez de erro
+        return 1;
     }
     
     duk_push_object(ctx);

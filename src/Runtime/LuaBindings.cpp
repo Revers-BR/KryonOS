@@ -856,23 +856,19 @@ int LuaBindings::lua_getChar(lua_State *L) {
 int LuaBindings::lua_getTouch(lua_State *L) {
     uint16_t tx, ty;
     bool touched = getTouch(&tx, &ty);
-        
-    // Hidden OS Exit Button (Top Right Corner)
+    
     if (touched && tx >= 200 && ty <= 40) {
-        return luaL_error(L, "OS_EXIT");
+        lua_pushnil(L);  // Retorna nil em vez de erro
+        return 1;
     }
     
     lua_newtable(L);
-    
     lua_pushinteger(L, touched ? (int)tx : 0);
     lua_setfield(L, -2, "x");
-    
     lua_pushinteger(L, touched ? (int)ty : 0);
     lua_setfield(L, -2, "y");
-    
     lua_pushboolean(L, touched ? 1 : 0);
     lua_setfield(L, -2, "touched");
-    
     return 1;
 }
 
