@@ -660,13 +660,13 @@ time_t FileSystem::getLastModified(const char* path) {
 size_t FileSystem::getTotalSpace(const char* drive) {
     FSPath p = resolve(drive);
     if (!p.isValid()) return 0;
-    return (p.fs == &LittleFS) ? LittleFS.totalBytes() : SD.totalBytes();
+    return (p.fs == &LittleFS) ? LittleFS.totalBytes() : getSDTotalBytes();
 }
 
 size_t FileSystem::getUsedSpace(const char* drive) {
     FSPath p = resolve(drive);
     if (!p.isValid()) return 0;
-    return (p.fs == &LittleFS) ? LittleFS.usedBytes() : SD.usedBytes();
+    return (p.fs == &LittleFS) ? LittleFS.usedBytes() : getSDUsedBytes();
 }
 
 size_t FileSystem::getFreeSpace(const char* drive) {
