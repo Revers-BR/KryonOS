@@ -19,6 +19,13 @@ struct LuaDumpBuffer {
     size_t capacity;
 };
 
+struct ModuleCacheEntry {
+    String moduleName;      // Nome do módulo (ex: "screen1")
+    String luaPath;         // Caminho do .lua
+    String luacPath;        // Caminho do .luac
+    bool isLoaded;          // Se já está carregado na memória
+};
+
 // Inclusão dos headers do Lua envolvidos em extern "C" para compatibilidade C++
 extern "C" {
     #include "lua.h"
@@ -54,6 +61,8 @@ private:
     enum class Engine { Lua, Wren, Duktape, Unknown };
 
     static Engine detectEngine(const String& filePath);
+
+    static void setupCustomRequire(lua_State* L);
 
     // Corpo específico de cada engine — rodam dentro de
     // EngineTaskRunner::run(), chamados só por runFile().

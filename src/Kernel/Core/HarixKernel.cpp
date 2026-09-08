@@ -1,3 +1,4 @@
+#include "ModuleCache.h"
 #include "HarixKernel.h"
 #include "Runtime/WrenAPI.h"
 #include "Runtime/JSBindings.h"
@@ -539,16 +540,52 @@ bool executeBytecode(lua_State* L, const char* luacPath) {
         return false;
     }
     
-    // Verifica se é muito grande (limite de segurança)
-    if (fileSize > 100000) { // 100KB máximo
-        Serial.println("Bytecode file too large");
-        return false;
+    uint8_t* buffer = nullptr;
+
+    // Primeiro tenta PSRAM, se disponível
+    if (psramFound()) {
+        buffer = (uint8_t*)heap_caps_malloc(
+            fileSize,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+
+        if (buffer) {
+            Serial.printf(
+                "Bytecode allocated in PSRAM: %u bytes\n",
+                fileSize
+            );
+        } else {
+            Serial.println(
+                "PSRAM allocation failed, trying internal RAM..."
+            );
+        }
     }
-    
-    // Aloca buffer para o bytecode
-    uint8_t* buffer = (uint8_t*)malloc(fileSize);
+
+    // Se não tem PSRAM ou a alocação na PSRAM falhou,
+    // tenta a RAM interna com malloc()
     if (!buffer) {
-        Serial.println("Failed to allocate memory for bytecode");
+        // Verifica se é muito grande (limite de segurança)
+        if (fileSize > 150000) {
+            Serial.println("Bytecode file too large");
+            return false;
+        }
+        
+        buffer = (uint8_t*)malloc(fileSize);
+
+        if (buffer) {
+            Serial.printf(
+                "Bytecode allocated in internal RAM: %u bytes\n",
+                fileSize
+            );
+        }
+    }
+
+    // Falha total
+    if (!buffer) {
+        Serial.println(
+            "Failed to allocate memory for bytecode "
+            "(PSRAM and internal RAM)"
+        );
         return false;
     }
     
@@ -775,7 +812,22 @@ void HarixKernel::runLuaFile(const char* filePath)
         luaL_openlibs(L);
         lua_atpanic(L, my_lua_panic);
         LuaBindings::init(L);
-
+        
+        String appDirectory = path;
+        int lastSlash = appDirectory.lastIndexOf('/');
+        if (lastSlash > 0) {
+            appDirectory = appDirectory.substring(0, lastSlash);
+        } else {
+            appDirectory = "/local";
+        }
+        
+        ModuleCache::setAppDirectory(appDirectory);
+        
+        setupCustomRequire(L);
+        
+        Serial.print("App directory: ");
+        Serial.println(appDirectory);
+        
         String luaPath = path;
         String luacPath;
 
@@ -880,4 +932,151 @@ void HarixKernel::runLuaFile(const char* filePath)
         lua_close(L);
         L = nullptr;
     });
+}
+
+// ============================================
+// NOVAS FUNÇÕES AUXILIARES
+// ============================================
+
+
+// ============================================
+// LOADER PERSONALIZADO PARA MÓDULOS
+// ============================================
+
+static int lua_custom_loader(lua_State* L) {
+    const char* moduleName = luaL_checkstring(L, 1);
+    
+    Serial.printf("[ModuleLoader] Carregando módulo: %s\n", moduleName);
+    
+    // Resolve o caminho do módulo
+    String modulePath = ModuleCache::resolveModulePath(L, moduleName);
+    
+    if (modulePath.length() == 0) {
+        lua_pushfstring(L, "\n\tMódulo '%s' não encontrado", moduleName);
+        return 1;
+    }
+    
+    Serial.printf("[ModuleLoader] Caminho: %s\n", modulePath.c_str());
+    
+    // Gera caminho do .luac
+    String luacPath = ModuleCache::getLuacPath(modulePath);
+    
+    // Verifica se precisa recompilar
+    if (ModuleCache::needsRecompile(modulePath, luacPath)) {
+        Serial.printf("[ModuleLoader] Compilando %s...\n", modulePath.c_str());
+        
+        if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
+            // Fallback: carrega o .lua diretamente
+            Serial.println("[ModuleLoader] Fallback para fonte");
+            String source = FileSystem::readTextFile(modulePath.c_str());
+            if (source.length() > 0) {
+                if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
+                    return 1;
+                }
+            }
+            lua_pushfstring(L, "\n\tErro ao carregar módulo '%s'", moduleName);
+            return 1;
+        }
+    }
+    
+    // Carrega o bytecode
+    Serial.printf("[ModuleLoader] Carregando bytecode: %s\n", luacPath.c_str());
+    
+    if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
+        // Fallback para fonte
+        String source = FileSystem::readTextFile(modulePath.c_str());
+        if (source.length() > 0) {
+            if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
+                return 1;
+            }
+        }
+        lua_pushfstring(L, "\n\tErro ao carregar bytecode de '%s'", moduleName);
+        return 1;
+    }
+    
+    return 1;
+}
+
+static int lua_custom_require(lua_State* L) {
+    const char* moduleName = luaL_checkstring(L, 1);
+    
+    // Verifica cache de módulos carregados
+    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+    lua_getfield(L, -1, moduleName);
+    
+    if (lua_toboolean(L, -1)) {
+        Serial.printf("[Require] Módulo '%s' do cache\n", moduleName);
+        return 1; // Já carregado
+    }
+    
+    lua_pop(L, 1); // Remove nil
+    
+    // Resolve caminho
+    String modulePath = ModuleCache::resolveModulePath(L, moduleName);
+    
+    if (modulePath.length() == 0) {
+        luaL_error(L, "Módulo '%s' não encontrado", moduleName);
+        return 0;
+    }
+    
+    String luacPath = ModuleCache::getLuacPath(modulePath);
+    
+    // Compila se necessário
+    if (ModuleCache::needsRecompile(modulePath, luacPath)) {
+        Serial.printf("[Require] Compilando módulo '%s'\n", moduleName);
+        ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str());
+    }
+    
+    // Carrega bytecode
+    if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
+        // Fallback para fonte
+        String source = FileSystem::readTextFile(modulePath.c_str());
+        if (source.length() == 0 || 
+            luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) != LUA_OK) {
+            luaL_error(L, "Erro ao carregar módulo '%s'", moduleName);
+            return 0;
+        }
+    }
+    
+    // Executa o módulo
+    if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
+        return lua_error(L);
+    }
+    
+    // Salva no cache
+    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+    lua_pushvalue(L, -2);
+    lua_setfield(L, -2, moduleName);
+    lua_pop(L, 1);
+    
+    Serial.printf("[Require] Módulo '%s' carregado com sucesso\n", moduleName);
+    
+    return 1;
+}
+
+void HarixKernel::setupCustomRequire(lua_State* L) {
+    // Substitui o require padrão
+    lua_pushcfunction(L, lua_custom_require);
+    lua_setglobal(L, "require");
+    
+    // Adiciona loader personalizado ao package.loaders
+    lua_getglobal(L, "package");
+    lua_getfield(L, -1, "loaders");
+    
+    if (lua_istable(L, -1)) {
+        int count = lua_objlen(L, -1);
+        lua_pushcfunction(L, lua_custom_loader);
+        lua_rawseti(L, -2, count + 1);
+    }
+    
+    lua_pop(L, 2); // Remove package e loaders
+    
+    // Configura package.path para incluir o diretório do app
+    String appDir = ModuleCache::getAppDirectory();
+    if (appDir.length() > 0) {
+        lua_getglobal(L, "package");
+        lua_pushstring(L, (appDir + "/?.lua;" + appDir + "/?/init.lua;").c_str());
+        lua_setfield(L, -2, "path");
+        lua_pop(L, 1);
+    }
 }

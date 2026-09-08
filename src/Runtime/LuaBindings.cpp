@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <WebManager/WebManager.h>
 #include <Kernel/TimeManager.h>
+#include <Kernel/Core/ModuleCache.h>
 #include <File System/FileSystem.h>
 #include <Keyboard/MyKeyboard.h>
 
@@ -1326,4 +1327,3 @@ int LuaBindings::lua_prompt(lua_State *L) {
     
     return 1;
 }
-
