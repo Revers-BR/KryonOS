@@ -6,68 +6,67 @@
 std::vector<ModuleCache::CacheEntry> ModuleCache::_cache;
 String ModuleCache::_appDirectory = "";
 
-// ============================================
-// GERAÇÃO DE CAMINHOS
-// ============================================
-
 String ModuleCache::getLuacPath(const String& luaPath) {
+    if (luaPath.endsWith(".luac")) {
+        return luaPath;
+    }
+    
     if (luaPath.endsWith(".lua")) {
         return luaPath.substring(0, luaPath.length() - 4) + ".luac";
     }
+    
     return luaPath + ".luac";
 }
 
 String ModuleCache::resolveModulePath(lua_State* L, const char* moduleName) {
     if (moduleName == nullptr) return "";
     
-    // Converte pontos em barras
     String modulePath = String(moduleName);
     modulePath.replace(".", "/");
     
-    // Lista de candidatos
-    std::vector<String> candidates;
-    
-    // 1. Diretório do app atual (prioridade máxima)
-    if (_appDirectory.length() > 0) {
-        candidates.push_back(_appDirectory + "/" + modulePath + ".lua");
-        candidates.push_back(_appDirectory + "/" + modulePath + "/init.lua");
+    if (modulePath.indexOf("..") >= 0) {
+        Serial.println("[ModuleCache] ERRO: Path traversal detectado!");
+        return "";
     }
     
-    // 2. Diretórios padrão do sistema
-    candidates.push_back("/local/apps/" + modulePath + ".lua");
-    candidates.push_back("/local/apps/" + modulePath + "/init.lua");
-    candidates.push_back("/sd/apps/" + modulePath + ".lua");
-    candidates.push_back("/sd/apps/" + modulePath + "/init.lua");
-    candidates.push_back("/local/modules/" + modulePath + ".lua");
-    candidates.push_back("/local/modules/" + modulePath + "/init.lua");
+    if (_appDirectory.length() == 0) {
+        Serial.println("[ModuleCache] ERRO: Diretório do app não configurado!");
+        return "";
+    }
     
-    // Verifica cada candidato
-    for (const String& path : candidates) {
-        if (FileSystem::exists(path.c_str()) && FileSystem::isFile(path.c_str())) {
-            return path;
+    String candidates[4];
+    
+    candidates[0] = _appDirectory + "/" + modulePath + ".luac";
+    
+    candidates[1] = _appDirectory + "/" + modulePath + ".lua";
+    
+    candidates[2] = _appDirectory + "/" + modulePath + "/init.luac";
+    
+    candidates[3] = _appDirectory + "/" + modulePath + "/init.lua";
+    
+    for (int i = 0; i < 4; i++) {
+        if (FileSystem::exists(candidates[i].c_str()) && 
+            FileSystem::isFile(candidates[i].c_str())) {
+            
+            Serial.printf("[ModuleCache] '%s' -> %s\n", moduleName, candidates[i].c_str());
+            return candidates[i];
         }
     }
     
+    Serial.printf("[ModuleCache] Módulo '%s' não encontrado\n", moduleName);
     return "";
 }
 
-// ============================================
-// VERIFICAÇÃO DE RECOMPILAÇÃO
-// ============================================
-
 bool ModuleCache::needsRecompile(const String& luaPath, const String& luacPath) {
-    // Se não tem .luac, precisa compilar
     if (!FileSystem::exists(luacPath.c_str())) {
         Serial.printf("[ModuleCache] %s não existe\n", luacPath.c_str());
         return true;
     }
     
-    // Se não tem .lua, usa .luac
     if (!FileSystem::exists(luaPath.c_str())) {
         return false;
     }
     
-    // Compara timestamps
     time_t luaTime = FileSystem::getLastModified(luaPath.c_str());
     time_t luacTime = FileSystem::getLastModified(luacPath.c_str());
     
@@ -76,10 +75,8 @@ bool ModuleCache::needsRecompile(const String& luaPath, const String& luacPath) 
         return true;
     }
     
-    // Compara MD5 (mais preciso)
     String luaMD5 = FileSystem::getFileMD5(luaPath.c_str());
     
-    // Lê metadados do .luac
     String metaPath = luacPath + ".meta";
     if (FileSystem::exists(metaPath.c_str())) {
         String metaContent = FileSystem::readTextFile(metaPath.c_str());
@@ -96,11 +93,6 @@ bool ModuleCache::needsRecompile(const String& luaPath, const String& luacPath) 
     return true; // Sem metadados, recompila
 }
 
-// ============================================
-// COMPILAÇÃO
-// ============================================
-
-// Writer callback para lua_dump
 static int moduleDumpWriter(lua_State* L, const void* p, size_t sz, void* ud) {
     LuaDumpBuffer* buf = (LuaDumpBuffer*)ud;
     

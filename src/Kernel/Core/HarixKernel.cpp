@@ -569,7 +569,7 @@ bool executeBytecode(lua_State* L, const char* luacPath) {
             Serial.println("Bytecode file too large");
             return false;
         }
-        
+
         buffer = (uint8_t*)malloc(fileSize);
 
         if (buffer) {
@@ -934,21 +934,9 @@ void HarixKernel::runLuaFile(const char* filePath)
     });
 }
 
-// ============================================
-// NOVAS FUNÇÕES AUXILIARES
-// ============================================
-
-
-// ============================================
-// LOADER PERSONALIZADO PARA MÓDULOS
-// ============================================
-
 static int lua_custom_loader(lua_State* L) {
     const char* moduleName = luaL_checkstring(L, 1);
     
-    Serial.printf("[ModuleLoader] Carregando módulo: %s\n", moduleName);
-    
-    // Resolve o caminho do módulo
     String modulePath = ModuleCache::resolveModulePath(L, moduleName);
     
     if (modulePath.length() == 0) {
@@ -956,60 +944,57 @@ static int lua_custom_loader(lua_State* L) {
         return 1;
     }
     
-    Serial.printf("[ModuleLoader] Caminho: %s\n", modulePath.c_str());
-    
-    // Gera caminho do .luac
-    String luacPath = ModuleCache::getLuacPath(modulePath);
-    
-    // Verifica se precisa recompilar
-    if (ModuleCache::needsRecompile(modulePath, luacPath)) {
-        Serial.printf("[ModuleLoader] Compilando %s...\n", modulePath.c_str());
+    if (modulePath.endsWith(".luac")) {
+        Serial.printf("[Loader] Carregando bytecode existente: %s\n", modulePath.c_str());
         
-        if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
-            // Fallback: carrega o .lua diretamente
-            Serial.println("[ModuleLoader] Fallback para fonte");
-            String source = FileSystem::readTextFile(modulePath.c_str());
-            if (source.length() > 0) {
-                if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
-                    return 1;
-                }
-            }
-            lua_pushfstring(L, "\n\tErro ao carregar módulo '%s'", moduleName);
+        if (!ModuleCache::loadLuac(L, modulePath.c_str())) {
+            lua_pushfstring(L, "\n\tErro ao carregar bytecode '%s'", moduleName);
             return 1;
         }
-    }
-    
-    // Carrega o bytecode
-    Serial.printf("[ModuleLoader] Carregando bytecode: %s\n", luacPath.c_str());
-    
-    if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
-        // Fallback para fonte
-        String source = FileSystem::readTextFile(modulePath.c_str());
-        if (source.length() > 0) {
-            if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
+        
+        return 1;
+        
+    } else {
+        String luacPath = ModuleCache::getLuacPath(modulePath);
+        
+        if (ModuleCache::needsRecompile(modulePath, luacPath)) {
+            Serial.printf("[Loader] Compilando: %s -> %s\n", 
+                         modulePath.c_str(), luacPath.c_str());
+            
+            if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
+                String source = FileSystem::readTextFile(modulePath.c_str());
+                if (source.length() > 0) {
+                    if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
+                        return 1;
+                    }
+                }
+                lua_pushfstring(L, "\n\tErro ao compilar '%s'", moduleName);
                 return 1;
             }
         }
-        lua_pushfstring(L, "\n\tErro ao carregar bytecode de '%s'", moduleName);
+        
+        if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
+            lua_pushfstring(L, "\n\tErro ao carregar '%s'", moduleName);
+        }
+        
         return 1;
     }
-    
-    return 1;
 }
 
 static int lua_custom_require(lua_State* L) {
     const char* moduleName = luaL_checkstring(L, 1);
     
-    // Verifica cache de módulos carregados
+    // Verifica cache
     lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
     lua_getfield(L, -1, moduleName);
     
     if (lua_toboolean(L, -1)) {
         Serial.printf("[Require] Módulo '%s' do cache\n", moduleName);
-        return 1; // Já carregado
+        lua_remove(L, -2);  // Remove _LOADED
+        return 1;
     }
     
-    lua_pop(L, 1); // Remove nil
+    lua_pop(L, 2);  // Remove nil e _LOADED
     
     // Resolve caminho
     String modulePath = ModuleCache::resolveModulePath(L, moduleName);
@@ -1019,22 +1004,47 @@ static int lua_custom_require(lua_State* L) {
         return 0;
     }
     
-    String luacPath = ModuleCache::getLuacPath(modulePath);
+    // ============================================
+    // CORREÇÃO: Verifica se já é .luac
+    // ============================================
     
-    // Compila se necessário
-    if (ModuleCache::needsRecompile(modulePath, luacPath)) {
-        Serial.printf("[Require] Compilando módulo '%s'\n", moduleName);
-        ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str());
-    }
-    
-    // Carrega bytecode
-    if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
-        // Fallback para fonte
-        String source = FileSystem::readTextFile(modulePath.c_str());
-        if (source.length() == 0 || 
-            luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) != LUA_OK) {
-            luaL_error(L, "Erro ao carregar módulo '%s'", moduleName);
+    if (modulePath.endsWith(".luac")) {
+        // Já é bytecode - carrega diretamente
+        Serial.printf("[Require] Carregando bytecode: %s\n", modulePath.c_str());
+        
+        if (!ModuleCache::loadLuac(L, modulePath.c_str())) {
+            luaL_error(L, "Erro ao carregar bytecode '%s'", moduleName);
             return 0;
+        }
+        
+    } else {
+        // É .lua - compila se necessário
+        String luacPath = ModuleCache::getLuacPath(modulePath);
+        
+        if (ModuleCache::needsRecompile(modulePath, luacPath)) {
+            Serial.printf("[Require] Compilando módulo '%s'\n", moduleName);
+            
+            if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
+                // Fallback para fonte
+                String source = FileSystem::readTextFile(modulePath.c_str());
+                if (source.length() == 0 || 
+                    luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) != LUA_OK) {
+                    luaL_error(L, "Erro ao carregar módulo '%s'", moduleName);
+                    return 0;
+                }
+            } else {
+                // Carrega o .luac recém-compilado
+                if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
+                    luaL_error(L, "Erro ao carregar '%s'", moduleName);
+                    return 0;
+                }
+            }
+        } else {
+            // Usa .luac cacheado
+            if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
+                luaL_error(L, "Erro ao carregar '%s'", moduleName);
+                return 0;
+            }
         }
     }
     
