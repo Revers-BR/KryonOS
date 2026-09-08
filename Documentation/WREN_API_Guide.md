@@ -1181,49 +1181,143 @@ Returns `true` when the installed ESP32 supports the internal temperature sensor
 
 **Returns:** Map
 
-Returns information about the ESP32 and current memory state.
+Returns detailed information about ESP32 memory, PSRAM, the scripting runtime, chip, flash and system state.
 
-Structure:
+### Structure
 
 ```wren
 {
-    "totalRAM": 0,
-    "freeRAM": 0,
-    "minFreeRAM": 0,
-    "maxAllocRAM": 0,
-    "cpuFreqMHz": 0,
-    "chipModel": "",
-    "chipCores": 0,
-    "chipRevision": 0,
-    "flashSize": 0,
-    "uptimeMs": 0
+    "ram": {
+        "total": 0,
+        "free": 0,
+        "used": 0,
+        "minFree": 0,
+        "maxAlloc": 0,
+        "largestFreeBlock": 0
+    },
+
+    "psram": {
+        "total": 0,
+        "free": 0,
+        "used": 0,
+        "minFree": 0,
+        "maxAlloc": 0,
+        "largestFreeBlock": 0
+    },
+
+    "runtime": {
+        "memory": 0,
+        "stack": {
+            "minFree": 0
+        }
+    },
+
+    "chip": {
+        "freqMHz": 0,
+        "model": "",
+        "cores": 0,
+        "revision": 0
+    },
+
+    "flash": {
+        "size": 0,
+        "speed": 0
+    },
+
+    "system": {
+        "uptimeMs": 0,
+        "sdkVersion": ""
+    }
 }
 ```
 
-Fields:
+### RAM
 
-```text
-totalRAM
-freeRAM
-minFreeRAM
-maxAllocRAM
-cpuFreqMHz
-chipModel
-chipCores
-chipRevision
-flashSize
-uptimeMs
-```
+| Field                             | Type   | Description                                                 |
+| --------------------------------- | ------ | ----------------------------------------------------------- |
+| `info["ram"]["total"]`            | Number | Total internal RAM heap, in bytes.                          |
+| `info["ram"]["free"]`             | Number | Currently available internal RAM, in bytes.                 |
+| `info["ram"]["used"]`             | Number | Estimated internal RAM currently used, in bytes.            |
+| `info["ram"]["minFree"]`          | Number | Minimum internal RAM free since boot, in bytes.             |
+| `info["ram"]["maxAlloc"]`         | Number | Largest currently allocatable internal RAM block, in bytes. |
+| `info["ram"]["largestFreeBlock"]` | Number | Largest contiguous free internal RAM block, in bytes.       |
 
-Example:
+### PSRAM
+
+| Field                               | Type   | Description                                          |
+| ----------------------------------- | ------ | ---------------------------------------------------- |
+| `info["psram"]["total"]`            | Number | Total PSRAM, in bytes.                               |
+| `info["psram"]["free"]`             | Number | Currently available PSRAM, in bytes.                 |
+| `info["psram"]["used"]`             | Number | Estimated PSRAM currently used, in bytes.            |
+| `info["psram"]["minFree"]`          | Number | Minimum PSRAM free since boot, in bytes.             |
+| `info["psram"]["maxAlloc"]`         | Number | Largest currently allocatable PSRAM block, in bytes. |
+| `info["psram"]["largestFreeBlock"]` | Number | Largest contiguous free PSRAM block, in bytes.       |
+
+If PSRAM is not available, the PSRAM values are reported as `0`.
+
+### Runtime
+
+| Field                                 | Type   | Description                                                           |
+| ------------------------------------- | ------ | --------------------------------------------------------------------- |
+| `info["runtime"]["memory"]`           | Number | Memory currently accounted for by the scripting runtime, in bytes.    |
+| `info["runtime"]["stack"]["minFree"]` | Number | Minimum free stack observed for the current scripting task, in bytes. |
+
+`runtime.memory` represents scripting runtime memory and **not** the total ESP32 heap usage.
+
+### Chip
+
+| Field                      | Type   | Description           |
+| -------------------------- | ------ | --------------------- |
+| `info["chip"]["freqMHz"]`  | Number | CPU frequency in MHz. |
+| `info["chip"]["model"]`    | String | ESP32 chip model.     |
+| `info["chip"]["cores"]`    | Number | Number of CPU cores.  |
+| `info["chip"]["revision"]` | Number | Chip revision.        |
+
+### Flash
+
+| Field                    | Type   | Description           |
+| ------------------------ | ------ | --------------------- |
+| `info["flash"]["size"]`  | Number | Flash size, in bytes. |
+| `info["flash"]["speed"]` | Number | Flash speed, in Hz.   |
+
+### System
+
+| Field                          | Type   | Description                       |
+| ------------------------------ | ------ | --------------------------------- |
+| `info["system"]["uptimeMs"]`   | Number | Time since boot, in milliseconds. |
+| `info["system"]["sdkVersion"]` | String | ESP-IDF/SDK version.              |
+
+### Example
 
 ```wren
 var info = Harix.getInfo()
 
-Harix.print(info["freeRAM"])
-Harix.print(info["cpuFreqMHz"])
-Harix.print(info["chipModel"])
+Harix.print("Free RAM: " + info["ram"]["free"])
+Harix.print("Free PSRAM: " + info["psram"]["free"])
+
+Harix.print("Runtime memory: " + info["runtime"]["memory"])
+Harix.print("Stack min free: " + info["runtime"]["stack"]["minFree"])
+
+Harix.print("CPU: " + info["chip"]["freqMHz"] + " MHz")
+Harix.print("Chip: " + info["chip"]["model"])
+Harix.print("Cores: " + info["chip"]["cores"])
+
+Harix.print("Flash: " + info["flash"]["size"])
+Harix.print("Flash speed: " + info["flash"]["speed"])
+
+Harix.print("Uptime: " + info["system"]["uptimeMs"])
+Harix.print("SDK: " + info["system"]["sdkVersion"])
 ```
+
+### Notes
+
+* Memory values are reported in **bytes**.
+* `minFree` represents the minimum free memory observed since boot.
+* `largestFreeBlock` represents the largest contiguous free block currently available.
+* `runtime.memory` is specific to the scripting runtime and should not be compared directly with `ram.used`.
+* `runtime.stack.minFree` reports the minimum free stack space observed by the scripting task.
+* The same hierarchical structure is used across the Lua, Wren and Duktape bindings.
+* The previous flat fields such as `totalRAM`, `freeRAM`, `cpuFreqMHz` and `flashSize` are replaced by the hierarchical structure above.
 
 ---
 

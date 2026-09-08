@@ -927,41 +927,162 @@ int LuaBindings::lua_hasTemperatureSensor(lua_State *L) {
     return 1;
 }
 
-int LuaBindings::lua_getInfo(lua_State *L) {
+int LuaBindings::lua_getInfo(lua_State *L)
+{
     lua_newtable(L);
 
-    // RAM
+    // =========================================================
+    // RAM interna
+    // =========================================================
+    lua_newtable(L);
+
     lua_pushinteger(L, ESP.getHeapSize());
-    lua_setfield(L, -2, "totalRAM");
+    lua_setfield(L, -2, "total");
 
     lua_pushinteger(L, ESP.getFreeHeap());
-    lua_setfield(L, -2, "freeRAM");
+    lua_setfield(L, -2, "free");
+
+    lua_pushinteger(
+        L,
+        ESP.getHeapSize() - ESP.getFreeHeap()
+    );
+    lua_setfield(L, -2, "used");
 
     lua_pushinteger(L, ESP.getMinFreeHeap());
-    lua_setfield(L, -2, "minFreeRAM");
+    lua_setfield(L, -2, "minFree");
 
     lua_pushinteger(L, ESP.getMaxAllocHeap());
-    lua_setfield(L, -2, "maxAllocRAM");
+    lua_setfield(L, -2, "maxAlloc");
 
-    // Chip & CPU
+    lua_pushinteger(
+        L,
+        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)
+    );
+    lua_setfield(L, -2, "largestFreeBlock");
+
+    lua_setfield(L, -2, "ram");
+
+
+    // =========================================================
+    // PSRAM
+    // =========================================================
+    lua_newtable(L);
+
+    lua_pushinteger(L, ESP.getPsramSize());
+    lua_setfield(L, -2, "total");
+
+    lua_pushinteger(L, ESP.getFreePsram());
+    lua_setfield(L, -2, "free");
+
+    lua_pushinteger(
+        L,
+        ESP.getPsramSize() - ESP.getFreePsram()
+    );
+    lua_setfield(L, -2, "used");
+
+    lua_pushinteger(L, ESP.getMinFreePsram());
+    lua_setfield(L, -2, "minFree");
+
+    lua_pushinteger(L, ESP.getMaxAllocPsram());
+    lua_setfield(L, -2, "maxAlloc");
+
+    lua_pushinteger(
+        L,
+        heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)
+    );
+    lua_setfield(L, -2, "largestFreeBlock");
+
+    lua_setfield(L, -2, "psram");
+
+
+    // =========================================================
+    // Runtime de scripting
+    //
+    // API independente da linguagem:
+    //
+    // info.runtime.memory
+    // info.runtime.stack.minFree
+    // =========================================================
+    lua_newtable(L);
+
+    // Memória utilizada pelo Lua em bytes.
+    //
+    // LUA_GCCOUNT  = KB inteiros
+    // LUA_GCCOUNTB = bytes restantes
+    lua_Integer runtimeMemory =
+        (lua_Integer)lua_gc(L, LUA_GCCOUNT, 0) * 1024 +
+        (lua_Integer)lua_gc(L, LUA_GCCOUNTB, 0);
+
+    lua_pushinteger(L, runtimeMemory);
+    lua_setfield(L, -2, "memory");
+
+
+    // =========================================================
+    // Stack da task atual
+    // =========================================================
+    lua_newtable(L);
+
+    UBaseType_t stackMinFree =
+        uxTaskGetStackHighWaterMark(nullptr);
+
+    lua_pushinteger(
+        L,
+        (lua_Integer)stackMinFree * sizeof(StackType_t)
+    );
+    lua_setfield(L, -2, "minFree");
+
+    lua_setfield(L, -2, "stack");
+
+    lua_setfield(L, -2, "runtime");
+
+
+    // =========================================================
+    // CPU / Chip
+    // =========================================================
+    lua_newtable(L);
+
     lua_pushinteger(L, ESP.getCpuFreqMHz());
-    lua_setfield(L, -2, "cpuFreqMHz");
+    lua_setfield(L, -2, "freqMHz");
 
     lua_pushstring(L, ESP.getChipModel());
-    lua_setfield(L, -2, "chipModel");
+    lua_setfield(L, -2, "model");
 
     lua_pushinteger(L, ESP.getChipCores());
-    lua_setfield(L, -2, "chipCores");
+    lua_setfield(L, -2, "cores");
 
     lua_pushinteger(L, ESP.getChipRevision());
-    lua_setfield(L, -2, "chipRevision");
+    lua_setfield(L, -2, "revision");
+
+    lua_setfield(L, -2, "chip");
+
+
+    // =========================================================
+    // Flash
+    // =========================================================
+    lua_newtable(L);
 
     lua_pushinteger(L, ESP.getFlashChipSize());
-    lua_setfield(L, -2, "flashSize");
+    lua_setfield(L, -2, "size");
 
-    // Uptime
+    lua_pushinteger(L, ESP.getFlashChipSpeed());
+    lua_setfield(L, -2, "speed");
+
+    lua_setfield(L, -2, "flash");
+
+
+    // =========================================================
+    // Sistema
+    // =========================================================
+    lua_newtable(L);
+
     lua_pushinteger(L, millis());
     lua_setfield(L, -2, "uptimeMs");
+
+    lua_pushstring(L, ESP.getSdkVersion());
+    lua_setfield(L, -2, "sdkVersion");
+
+    lua_setfield(L, -2, "system");
+
 
     return 1;
 }

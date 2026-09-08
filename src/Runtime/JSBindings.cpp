@@ -745,41 +745,169 @@ duk_ret_t JSBindings::js_hasTemperatureSensor(duk_context *ctx) {
     return 1;
 }
 
-duk_ret_t JSBindings::js_getInfo(duk_context *ctx) {
-    duk_push_object(ctx);
+duk_ret_t JSBindings::js_getInfo(duk_context *ctx)
+{
+    // -------------------------------------------------
+    // Ensure enough stack space
+    // -------------------------------------------------
 
+    duk_require_stack(ctx, 8);
+
+    duk_push_object(ctx); // [ info ]
+
+
+    // =================================================
     // RAM
+    // =================================================
+
+    duk_push_object(ctx); // [ info, ram ]
+
     duk_push_uint(ctx, ESP.getHeapSize());
-    duk_put_prop_string(ctx, -2, "totalRAM");
+    duk_put_prop_string(ctx, -2, "total");
 
     duk_push_uint(ctx, ESP.getFreeHeap());
-    duk_put_prop_string(ctx, -2, "freeRAM");
+    duk_put_prop_string(ctx, -2, "free");
+
+    duk_push_uint(ctx, ESP.getHeapSize() - ESP.getFreeHeap());
+    duk_put_prop_string(ctx, -2, "used");
 
     duk_push_uint(ctx, ESP.getMinFreeHeap());
-    duk_put_prop_string(ctx, -2, "minFreeRAM");
+    duk_put_prop_string(ctx, -2, "minFree");
 
     duk_push_uint(ctx, ESP.getMaxAllocHeap());
-    duk_put_prop_string(ctx, -2, "maxAllocRAM");
+    duk_put_prop_string(ctx, -2, "maxAlloc");
 
-    // Chip & CPU
+    duk_push_uint(
+        ctx,
+        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+    );
+    duk_put_prop_string(ctx, -2, "largestFreeBlock");
+
+    duk_put_prop_string(ctx, -2, "ram");
+
+
+    // =================================================
+    // PSRAM
+    // =================================================
+
+    duk_push_object(ctx); // [ info, psram ]
+
+    duk_push_uint(ctx, ESP.getPsramSize());
+    duk_put_prop_string(ctx, -2, "total");
+
+    duk_push_uint(ctx, ESP.getFreePsram());
+    duk_put_prop_string(ctx, -2, "free");
+
+    duk_push_uint(
+        ctx,
+        ESP.getPsramSize() - ESP.getFreePsram()
+    );
+    duk_put_prop_string(ctx, -2, "used");
+
+    duk_push_uint(ctx, ESP.getMinFreePsram());
+    duk_put_prop_string(ctx, -2, "minFree");
+
+    duk_push_uint(ctx, ESP.getMaxAllocPsram());
+    duk_put_prop_string(ctx, -2, "maxAlloc");
+
+    duk_push_uint(
+        ctx,
+        heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+    );
+    duk_put_prop_string(ctx, -2, "largestFreeBlock");
+
+    duk_put_prop_string(ctx, -2, "psram");
+
+
+    // =================================================
+    // Runtime
+    // =================================================
+
+    duk_push_object(ctx); // [ info, runtime ]
+
+    // Duktape runtime memory.
+    //
+    // TODO:
+    // Replace 0 with the memory currently used/accounted
+    // by your Duktape allocator if you instrument one.
+    duk_push_uint(ctx, 0);
+    duk_put_prop_string(ctx, -2, "memory");
+
+
+    // -------------------------------------------------
+    // Stack
+    // -------------------------------------------------
+
+    duk_push_object(ctx); // [ info, runtime, stack ]
+
+    UBaseType_t stackMinFree =
+        uxTaskGetStackHighWaterMark(nullptr);
+
+    duk_push_uint(
+        ctx,
+        stackMinFree * sizeof(StackType_t)
+    );
+    duk_put_prop_string(ctx, -2, "minFree");
+
+    duk_put_prop_string(ctx, -2, "stack");
+
+    duk_put_prop_string(ctx, -2, "runtime");
+
+
+    // =================================================
+    // Chip / CPU
+    // =================================================
+
+    duk_push_object(ctx); // [ info, chip ]
+
     duk_push_uint(ctx, ESP.getCpuFreqMHz());
-    duk_put_prop_string(ctx, -2, "cpuFreqMHz");
+    duk_put_prop_string(ctx, -2, "freqMHz");
 
     duk_push_string(ctx, ESP.getChipModel());
-    duk_put_prop_string(ctx, -2, "chipModel");
+    duk_put_prop_string(ctx, -2, "model");
 
     duk_push_uint(ctx, ESP.getChipCores());
-    duk_put_prop_string(ctx, -2, "chipCores");
+    duk_put_prop_string(ctx, -2, "cores");
 
     duk_push_uint(ctx, ESP.getChipRevision());
-    duk_put_prop_string(ctx, -2, "chipRevision");
+    duk_put_prop_string(ctx, -2, "revision");
+
+    duk_put_prop_string(ctx, -2, "chip");
+
+
+    // =================================================
+    // Flash
+    // =================================================
+
+    duk_push_object(ctx); // [ info, flash ]
 
     duk_push_uint(ctx, ESP.getFlashChipSize());
-    duk_put_prop_string(ctx, -2, "flashSize");
+    duk_put_prop_string(ctx, -2, "size");
 
-    // Uptime
+    duk_push_uint(ctx, ESP.getFlashChipSpeed());
+    duk_put_prop_string(ctx, -2, "speed");
+
+    duk_put_prop_string(ctx, -2, "flash");
+
+
+    // =================================================
+    // System
+    // =================================================
+
+    duk_push_object(ctx); // [ info, system ]
+
     duk_push_uint(ctx, millis());
     duk_put_prop_string(ctx, -2, "uptimeMs");
+
+    duk_push_string(ctx, ESP.getSdkVersion());
+    duk_put_prop_string(ctx, -2, "sdkVersion");
+
+    duk_put_prop_string(ctx, -2, "system");
+
+
+    // =================================================
+    // Return
+    // =================================================
 
     return 1;
 }

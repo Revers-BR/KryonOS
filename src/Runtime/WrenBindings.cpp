@@ -1374,108 +1374,265 @@ void WrenBindings::getInfo(WrenVM* vm)
 {
     wrenSetSlotNewMap(vm, 0);
 
-    // -------------------------------------------------
-    // RAM
-    // -------------------------------------------------
+    // =================================================
+    // RAM interna
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
 
-    wrenSetSlotString(vm, 1, "totalRAM");
+    wrenSetSlotString(vm, 1, "total");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getHeapSize()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "freeRAM");
+    wrenSetSlotString(vm, 1, "free");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getFreeHeap()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "minFreeRAM");
+    wrenSetSlotString(vm, 1, "used");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
+        (double)(
+            ESP.getHeapSize() -
+            ESP.getFreeHeap()
+        )
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "minFree");
+    wrenSetSlotDouble(
+        vm,
+        3,
         (double)ESP.getMinFreeHeap()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "maxAllocRAM");
+    wrenSetSlotString(vm, 1, "maxAlloc");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getMaxAllocHeap()
     );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "largestFreeBlock");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)heap_caps_get_largest_free_block(
+            MALLOC_CAP_INTERNAL
+        )
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "ram");
     wrenSetMapValue(vm, 0, 1, 2);
 
 
-    // -------------------------------------------------
-    // Chip / CPU
-    // -------------------------------------------------
+    // =================================================
+    // PSRAM
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
 
-    wrenSetSlotString(vm, 1, "cpuFreqMHz");
+    wrenSetSlotString(vm, 1, "total");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
+        (double)ESP.getPsramSize()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "free");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)ESP.getFreePsram()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "used");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)(
+            ESP.getPsramSize() -
+            ESP.getFreePsram()
+        )
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "minFree");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)ESP.getMinFreePsram()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "maxAlloc");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)ESP.getMaxAllocPsram()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "largestFreeBlock");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)heap_caps_get_largest_free_block(
+            MALLOC_CAP_SPIRAM
+        )
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "psram");
+    wrenSetMapValue(vm, 0, 1, 2);
+
+
+    // =================================================
+    // Runtime
+    //
+    // Mantém a API independente da linguagem:
+    //
+    // info.runtime.memory
+    // info.runtime.stack.minFree
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
+
+    // TODO:
+    // Substituir por uma métrica de memória do Wren
+    // caso o runtime/allocator utilizado pelo projeto
+    // forneça essa informação.
+    wrenSetSlotString(vm, 1, "memory");
+    wrenSetSlotDouble(vm, 3, 0.0);
+    wrenSetMapValue(vm, 2, 1, 3);
+
+
+    // -------------------------------------------------
+    // Stack da task atual
+    // -------------------------------------------------
+    UBaseType_t stackMinFree =
+        uxTaskGetStackHighWaterMark(nullptr);
+
+    wrenSetSlotString(vm, 1, "stack");
+
+    wrenSetSlotNewMap(vm, 3);
+
+    wrenSetSlotString(vm, 1, "minFree");
+    wrenSetSlotDouble(
+        vm,
+        4,
+        (double)(
+            stackMinFree * sizeof(StackType_t)
+        )
+    );
+    wrenSetMapValue(vm, 3, 1, 4);
+
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "runtime");
+    wrenSetMapValue(vm, 0, 1, 2);
+
+
+    // =================================================
+    // Chip / CPU
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
+
+    wrenSetSlotString(vm, 1, "freqMHz");
+    wrenSetSlotDouble(
+        vm,
+        3,
         (double)ESP.getCpuFreqMHz()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "chipModel");
+    wrenSetSlotString(vm, 1, "model");
     wrenSetSlotString(
         vm,
-        2,
+        3,
         ESP.getChipModel()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "chipCores");
+    wrenSetSlotString(vm, 1, "cores");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getChipCores()
     );
-    wrenSetMapValue(vm, 0, 1, 2);
+    wrenSetMapValue(vm, 2, 1, 3);
 
-
-    wrenSetSlotString(vm, 1, "chipRevision");
+    wrenSetSlotString(vm, 1, "revision");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getChipRevision()
     );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "chip");
     wrenSetMapValue(vm, 0, 1, 2);
 
 
-    wrenSetSlotString(vm, 1, "flashSize");
+    // =================================================
+    // Flash
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
+
+    wrenSetSlotString(vm, 1, "size");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)ESP.getFlashChipSize()
     );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "speed");
+    wrenSetSlotDouble(
+        vm,
+        3,
+        (double)ESP.getFlashChipSpeed()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "flash");
     wrenSetMapValue(vm, 0, 1, 2);
 
 
-    // -------------------------------------------------
-    // Uptime
-    // -------------------------------------------------
+    // =================================================
+    // Sistema
+    // =================================================
+    wrenSetSlotNewMap(vm, 2);
 
     wrenSetSlotString(vm, 1, "uptimeMs");
     wrenSetSlotDouble(
         vm,
-        2,
+        3,
         (double)::millis()
     );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "sdkVersion");
+    wrenSetSlotString(
+        vm,
+        3,
+        ESP.getSdkVersion()
+    );
+    wrenSetMapValue(vm, 2, 1, 3);
+
+    wrenSetSlotString(vm, 1, "system");
     wrenSetMapValue(vm, 0, 1, 2);
 }
-
 
 // =====================================================
 // Restart

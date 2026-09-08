@@ -811,35 +811,293 @@ Returns `true` if the installed ESP32 chip supports the internal temperature sen
 
 **Returns:** `table`
 
-Structure:
+Returns detailed information about the ESP32 memory, scripting runtime, chip, flash and system state.
+
+### Structure
 
 ```lua
 {
-    totalRAM = 0,
-    freeRAM = 0,
-    minFreeRAM = 0,
-    maxAllocRAM = 0,
-    cpuFreqMHz = 0,
-    chipModel = "",
-    chipCores = 0,
-    chipRevision = 0,
-    flashSize = 0,
-    uptimeMs = 0
+    ram = {
+        total = 0,
+        free = 0,
+        used = 0,
+        minFree = 0,
+        maxAlloc = 0,
+        largestFreeBlock = 0
+    },
+
+    psram = {
+        total = 0,
+        free = 0,
+        used = 0,
+        minFree = 0,
+        maxAlloc = 0,
+        largestFreeBlock = 0
+    },
+
+    runtime = {
+        memory = 0,
+
+        stack = {
+            minFree = 0
+        }
+    },
+
+    chip = {
+        freqMHz = 0,
+        model = "",
+        cores = 0,
+        revision = 0
+    },
+
+    flash = {
+        size = 0,
+        speed = 0
+    },
+
+    system = {
+        uptimeMs = 0,
+        sdkVersion = ""
+    }
 }
 ```
 
-Fields:
+### RAM
 
-* `totalRAM`
-* `freeRAM`
-* `minFreeRAM`
-* `maxAllocRAM`
-* `cpuFreqMHz`
-* `chipModel`
-* `chipCores`
-* `chipRevision`
-* `flashSize`
-* `uptimeMs`
+`info.ram` contains information about the ESP32 internal heap.
+
+| Field                       | Type      | Description                                      |
+| --------------------------- | --------- | ------------------------------------------------ |
+| `info.ram.total`            | `integer` | Total internal heap size in bytes                |
+| `info.ram.free`             | `integer` | Currently available internal heap in bytes       |
+| `info.ram.used`             | `integer` | Estimated internal heap usage in bytes           |
+| `info.ram.minFree`          | `integer` | Minimum internal heap free since boot            |
+| `info.ram.maxAlloc`         | `integer` | Largest currently allocatable internal RAM block |
+| `info.ram.largestFreeBlock` | `integer` | Largest contiguous free internal RAM block       |
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+Harix.print(
+    "Free RAM: " ..
+    info.ram.free ..
+    " bytes"
+)
+
+Harix.print(
+    "Largest RAM block: " ..
+    info.ram.largestFreeBlock ..
+    " bytes"
+)
+```
+
+### PSRAM
+
+`info.psram` contains information about external PSRAM when available.
+
+| Field                         | Type      | Description                               |
+| ----------------------------- | --------- | ----------------------------------------- |
+| `info.psram.total`            | `integer` | Total PSRAM size in bytes                 |
+| `info.psram.free`             | `integer` | Currently available PSRAM in bytes        |
+| `info.psram.used`             | `integer` | Estimated PSRAM usage in bytes            |
+| `info.psram.minFree`          | `integer` | Minimum PSRAM free since boot             |
+| `info.psram.maxAlloc`         | `integer` | Largest currently allocatable PSRAM block |
+| `info.psram.largestFreeBlock` | `integer` | Largest contiguous free PSRAM block       |
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+if info.psram.total > 0 then
+
+    Harix.print(
+        "Free PSRAM: " ..
+        info.psram.free ..
+        " bytes"
+    )
+
+    Harix.print(
+        "Largest PSRAM block: " ..
+        info.psram.largestFreeBlock ..
+        " bytes"
+    )
+
+end
+```
+
+On devices without PSRAM, the PSRAM values may be `0`.
+
+### Runtime
+
+`info.runtime` contains information about the currently executing scripting runtime.
+
+| Field                        | Type      | Description                                                       |
+| ---------------------------- | --------- | ----------------------------------------------------------------- |
+| `info.runtime.memory`        | `integer` | Memory currently accounted for by the scripting runtime, in bytes |
+| `info.runtime.stack.minFree` | `integer` | Minimum free FreeRTOS task stack observed, in bytes               |
+
+`runtime.memory` refers to the scripting runtime's memory usage and is independent of the physical RAM/PSRAM counters.
+
+This field is intentionally language-neutral so that Lua, Wren and Duktape applications can use the same API.
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+Harix.print(
+    "Runtime memory: " ..
+    info.runtime.memory ..
+    " bytes"
+)
+
+Harix.print(
+    "Minimum stack free: " ..
+    info.runtime.stack.minFree ..
+    " bytes"
+)
+```
+
+### Chip / CPU
+
+`info.chip` contains information about the ESP32 processor.
+
+| Field                | Type      | Description          |
+| -------------------- | --------- | -------------------- |
+| `info.chip.freqMHz`  | `integer` | CPU frequency in MHz |
+| `info.chip.model`    | `string`  | ESP32 chip model     |
+| `info.chip.cores`    | `integer` | Number of CPU cores  |
+| `info.chip.revision` | `integer` | Chip revision        |
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+Harix.print(
+    "Chip: " ..
+    info.chip.model
+)
+
+Harix.print(
+    "CPU: " ..
+    info.chip.freqMHz ..
+    " MHz"
+)
+```
+
+### Flash
+
+`info.flash` contains information about the device flash memory.
+
+| Field              | Type      | Description             |
+| ------------------ | --------- | ----------------------- |
+| `info.flash.size`  | `integer` | Flash size in bytes     |
+| `info.flash.speed` | `integer` | Flash clock speed in Hz |
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+Harix.print(
+    "Flash size: " ..
+    info.flash.size ..
+    " bytes"
+)
+
+Harix.print(
+    "Flash speed: " ..
+    info.flash.speed ..
+    " Hz"
+)
+```
+
+### System
+
+`info.system` contains general system information.
+
+| Field                    | Type      | Description                       |
+| ------------------------ | --------- | --------------------------------- |
+| `info.system.uptimeMs`   | `integer` | System uptime in milliseconds     |
+| `info.system.sdkVersion` | `string`  | ESP-IDF/Arduino ESP32 SDK version |
+
+Example:
+
+```lua
+local info = Harix.getInfo()
+
+Harix.print(
+    "Uptime: " ..
+    info.system.uptimeMs ..
+    " ms"
+)
+
+Harix.print(
+    "SDK: " ..
+    info.system.sdkVersion
+)
+```
+
+### Complete Example
+
+```lua
+local info = Harix.getInfo()
+
+-- RAM
+Harix.print("RAM:")
+Harix.print("  Total: " .. info.ram.total)
+Harix.print("  Free: " .. info.ram.free)
+Harix.print("  Used: " .. info.ram.used)
+Harix.print("  Min free: " .. info.ram.minFree)
+Harix.print("  Max alloc: " .. info.ram.maxAlloc)
+Harix.print("  Largest block: " .. info.ram.largestFreeBlock)
+
+-- PSRAM
+Harix.print("PSRAM:")
+Harix.print("  Total: " .. info.psram.total)
+Harix.print("  Free: " .. info.psram.free)
+Harix.print("  Used: " .. info.psram.used)
+Harix.print("  Min free: " .. info.psram.minFree)
+Harix.print("  Max alloc: " .. info.psram.maxAlloc)
+Harix.print("  Largest block: " .. info.psram.largestFreeBlock)
+
+-- Runtime
+Harix.print("Runtime:")
+Harix.print("  Memory: " .. info.runtime.memory)
+Harix.print("  Stack min free: " .. info.runtime.stack.minFree)
+
+-- Chip
+Harix.print("Chip:")
+Harix.print("  Model: " .. info.chip.model)
+Harix.print("  CPU: " .. info.chip.freqMHz .. " MHz")
+Harix.print("  Cores: " .. info.chip.cores)
+Harix.print("  Revision: " .. info.chip.revision)
+
+-- Flash
+Harix.print("Flash:")
+Harix.print("  Size: " .. info.flash.size)
+Harix.print("  Speed: " .. info.flash.speed)
+
+-- System
+Harix.print("System:")
+Harix.print("  Uptime: " .. info.system.uptimeMs)
+Harix.print("  SDK: " .. info.system.sdkVersion)
+```
+
+### Notes
+
+* Memory values are reported in **bytes**.
+* `minFree` represents the minimum free memory observed since boot.
+* `largestFreeBlock` represents the largest contiguous allocation block currently available.
+* `runtime.memory` refers to the memory accounted for by the scripting runtime, not total ESP32 heap usage.
+* `runtime.stack.minFree` represents the minimum free stack observed by the current application task.
+* PSRAM values are `0` when PSRAM is not available.
+* Applications should prefer the hierarchical API instead of the previous flat fields such as `totalRAM`, `freeRAM`, `cpuFreqMHz` and `flashSize`.
+* The hierarchical structure is designed to remain consistent across Lua, Wren and Duktape runtimes.
 
 ---
 
