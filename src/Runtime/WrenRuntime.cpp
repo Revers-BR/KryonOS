@@ -142,54 +142,213 @@ WrenForeignClassMethods WrenRuntime::bindForeignClass(
 // Begin
 // =====================================================
 
+// WrenRuntime.cpp - Alocador otimizado
+
+// ============================================
+// Alocador que prioriza PSRAM
+// ============================================
+
+static void* wren_psram_first_allocate(void* memory, size_t newSize, void* userData)
+{
+    (void)userData;
+    
+    // ============================================
+    // LIBERAÇÃO
+    // ============================================
+    if (newSize == 0)
+    {
+        if (memory)
+        {
+            free(memory);  // free() funciona para ambos (PSRAM e RAM)
+        }
+        return NULL;
+    }
+    
+    // ============================================
+    // NOVA ALOCAÇÃO
+    // ============================================
+    if (!memory)
+    {
+        // 1. Tenta PSRAM PRIMEIRO (prioridade máxima)
+        if (psramFound())
+        {
+            void* result = heap_caps_malloc(newSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (result)
+            {
+                return result;
+            }
+        }
+        
+        // 2. Fallback para RAM interna
+        return malloc(newSize);
+    }
+    
+    // ============================================
+    // REALOCAÇÃO
+    // ============================================
+    
+    // Verifica se o ponteiro está na PSRAM
+    if (psramFound())
+    {
+        // Tenta realocar na PSRAM
+        void* result = heap_caps_realloc(memory, newSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (result)
+        {
+            return result;
+        }
+    }
+    
+    // Tenta realocar na RAM interna
+    void* result = realloc(memory, newSize);
+    if (result)
+    {
+        return result;
+    }
+    
+    // Último recurso: tenta PSRAM novamente
+    if (psramFound())
+    {
+        result = heap_caps_realloc(memory, newSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (result)
+        {
+            return result;
+        }
+    }
+    
+    return NULL;
+}
+
+// ============================================
+// Inicialização otimizada
+// ============================================
+
 bool WrenRuntime::begin()
 {
-    // Não criar duas VMs
     if (vm)
     {
         shutdown();
     }
 
-
     WrenConfiguration config;
-
     wrenInitConfiguration(&config);
 
-
-    // =====================================================
+    // ============================================
     // Callbacks
-    // =====================================================
-
+    // ============================================
+    config.reallocateFn = wren_psram_first_allocate;  // Alocador PSRAM-first
+    
     config.writeFn = writeFn;
     config.errorFn = errorFn;
     config.loadModuleFn = loadModule;
 
-    config.bindForeignMethodFn =
-        bindForeignMethod;
+    config.bindForeignMethodFn = bindForeignMethod;
+    config.bindForeignClassFn = bindForeignClass;
 
-    config.bindForeignClassFn =
-        bindForeignClass;
+    // ============================================
+    // Ajuste dinâmico do heap
+    // ============================================
+    
+    size_t freeInternalRAM = ESP.getFreeHeap();
+    size_t freePSRAM = ESP.getFreePsram();
+    size_t totalPSRAM = ESP.getPsramSize();
+    
+    Serial.printf("[Wren] RAM interna livre: %d bytes (%.1f KB)\n", 
+                  freeInternalRAM, freeInternalRAM / 1024.0);
+    Serial.printf("[Wren] PSRAM livre: %d bytes (%.1f KB)\n", 
+                  freePSRAM, freePSRAM / 1024.0);
+    Serial.printf("[Wren] PSRAM total: %d bytes (%.1f KB)\n", 
+                  totalPSRAM, totalPSRAM / 1024.0);
+    
+    if (psramFound() && freePSRAM > 0)
+    {
+        // ============================================
+        // PSRAM DISPONÍVEL - Usa TODA a PSRAM livre
+        // ============================================
+        
+        // Usa 90% da PSRAM livre (deixa margem de segurança)
+        size_t heapSize = (freePSRAM * 90) / 100;
+        
+        // Garante um mínimo razoável
+        if (heapSize < 64 * 1024)
+        {
+            heapSize = 64 * 1024;  // 64 KB mínimo
+        }
+        
+        config.initialHeapSize = heapSize;
+        config.minHeapSize = 16 * 1024;  // 16 KB mínimo
+        config.heapGrowthPercent = 50;
+        
+        Serial.printf("[Wren] Heap inicial: %d bytes (%.1f KB) na PSRAM\n", 
+                      heapSize, heapSize / 1024.0);
+        Serial.printf("[Wren] Heap mínimo: %d bytes (%.1f KB)\n", 
+                      config.minHeapSize, config.minHeapSize / 1024.0);
+    }
+    else
+    {
+        // ============================================
+        // SEM PSRAM - Usa 80% da RAM interna livre
+        // ============================================
+        
+        // Usa 80% da RAM interna livre
+        size_t heapSize = (freeInternalRAM * 80) / 100;
+        
+        // Garante um mínimo razoável
+        if (heapSize < 16 * 1024)
+        {
+            heapSize = 16 * 1024;  // 16 KB mínimo
+        }
+        
+        // Mas não excede 100 KB (para não esgotar a RAM)
+        if (heapSize > 100 * 1024)
+        {
+            heapSize = 100 * 1024;
+        }
+        
+        config.initialHeapSize = heapSize;
+        config.minHeapSize = 8 * 1024;  // 8 KB mínimo
+        config.heapGrowthPercent = 30;
+        
+        Serial.printf("[Wren] Heap inicial: %d bytes (%.1f KB) na RAM interna\n", 
+                      heapSize, heapSize / 1024.0);
+        Serial.printf("[Wren] Heap mínimo: %d bytes (%.1f KB)\n", 
+                      config.minHeapSize, config.minHeapSize / 1024.0);
+    }
 
-
-    // =====================================================
-    // Create VM
-    // =====================================================
-
+    // ============================================
+    // Cria VM
+    // ============================================
+    
     vm = wrenNewVM(&config);
 
     if (!vm)
     {
         Serial.println("[Wren] Failed to create VM");
-        return false;
+        
+        // Tenta com configuração mínima
+        wrenInitConfiguration(&config);
+        config.reallocateFn = wren_psram_first_allocate;
+        config.writeFn = writeFn;
+        config.errorFn = errorFn;
+        config.loadModuleFn = loadModule;
+        config.bindForeignMethodFn = bindForeignMethod;
+        config.bindForeignClassFn = bindForeignClass;
+        
+        config.initialHeapSize = 16 * 1024;  // 16 KB
+        config.minHeapSize = 4 * 1024;       // 4 KB
+        config.heapGrowthPercent = 20;
+        
+        Serial.println("[Wren] Tentando com heap mínimo...");
+        
+        vm = wrenNewVM(&config);
+        
+        if (!vm)
+        {
+            Serial.println("[Wren] Failed to create VM (mínimo)");
+            return false;
+        }
     }
 
-
-    // =====================================================
-    // Initialize bindings
-    // =====================================================
-
     WrenBindings::init(vm);
-
 
     Serial.println("[Wren] VM initialized");
 
