@@ -45,6 +45,81 @@ static void* psram_or_internal_realloc(void* ptr, size_t size) {
     return p;
 }
 
+// ============================================================
+// Helpers de UI para erros
+// ============================================================
+
+// Desenha tela de OOM (Out Of Ram) e espera toque/tecla.
+// Reutilizado por checkLuaError, checkJSError, my_lua_panic,
+// my_fatal e showOutOfRamError.
+static void showOomScreen(const char* engineName)
+{
+    Serial.printf("[%s] Out of RAM\n", engineName ? engineName : "?");
+
+    tft.fillScreen(TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString("Out Of Ram Error", 10, 20, 4);
+    tft.drawString("Please turn off WiFi in", 10, 60, 2);
+    tft.drawString("setting to free the ram", 10, 80, 2);
+    tft.drawString("and make this app running", 10, 100, 2);
+
+    // Botão 'X'
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_RED, TFT_WHITE);
+    tft.drawString("X", 215, 8, 2);
+
+    uint16_t tx, ty;
+    while (true) {
+        if (getTouch(&tx, &ty) && tx >= 200 && ty <= 40) break;
+        BoardKey key = getKeyInput();
+        if (key == BOARD_KEY_ESC) break;
+        delay(50);
+    }
+}
+
+// Desenha tela de exceção genérica (LUA/JS EXCEPTION) e espera input.
+static void showExceptionScreen(const char* title, const String& msg)
+{
+    Serial.printf("[%s] %s\n", title, msg.c_str());
+
+    tft.fillScreen(TFT_RED);
+    tft.setTextColor(TFT_WHITE, TFT_RED);
+    tft.setTextDatum(TL_DATUM);
+    tft.drawString(title, 10, 10, 4);
+
+    tft.setTextWrap(true, true);
+    tft.setTextFont(2);
+    tft.setCursor(10, 45);
+    tft.print(msg);
+
+    // Botão 'X'
+    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
+    tft.setTextColor(TFT_RED, TFT_WHITE);
+    tft.drawString("X", 215, 8, 2);
+
+    uint16_t tx, ty;
+    while (true) {
+        if (getTouch(&tx, &ty) && tx >= 200 && ty <= 40) break;
+        BoardKey key = getKeyInput();
+        if (key != BOARD_KEY_NONE) break;
+        delay(50);
+    }
+}
+
+// Detecta se a mensagem é sinal de OOM
+static bool isOomMessage(const String& msg)
+{
+    return msg.indexOf("alloc") != -1 ||
+           msg.indexOf("out of memory") != -1;
+}
+
+// Detecta sinal oculto de saída
+static bool isOsExitMessage(const String& msg)
+{
+    return msg.indexOf("OS_EXIT") != -1;
+}
+
 // 1. Alocador Lua
 static void *my_lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
     (void)ud;
@@ -90,102 +165,33 @@ static void *my_realloc(void *udata, void *ptr, duk_size_t size) {
 
 // 2. Manipulador de pânico do Lua (equivalente ao my_fatal do Duktape)
 static int my_lua_panic(lua_State *L) {
-    const char *msg = lua_tostring(L, -1);
-    Serial.print("Lua fatal panic: ");
-    Serial.println(msg ? msg : "no message");
-
-    tft.fillScreen(TFT_RED);
-    tft.setTextColor(TFT_WHITE, TFT_RED);
-    tft.drawString("Out Of Ram Error", 10, 20, 4);
-    tft.drawString("Please turn off WiFi in", 10, 60, 2);
-    tft.drawString("setting to free the ram", 10, 80, 2);
-    tft.drawString("and make this app running", 10, 100, 2);
-    
-    // Desenha o botão 'X' para fechar/reiniciar
-    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-    tft.setTextColor(TFT_RED, TFT_WHITE);
-    tft.drawString("X", 215, 8, 2);
-    
-    uint16_t tx, ty;
-    while(true) {
-        if (getTouch(&tx, &ty)) {
-            if (tx >= 200 && ty <= 40) break;
-        }
-        delay(50);
-    }
-    
-    ESP.restart(); // Reinicia o ESP32 ao fechar
+    const char* msg = lua_tostring(L, -1);
+    Serial.printf("Lua fatal panic: %s\n", msg ? msg : "no message");
+    showOomScreen("Lua");
+    ESP.restart();
     return 0;
 }
 
 // 3. Verificador de erros do Lua com suporte a tela TFT e Touch/Teclado
 void HarixKernel::checkLuaError(lua_State *L, int result) {
-    if (result != LUA_OK) {
-        const char *msg = lua_tostring(L, -1);
-        String errorMsg = msg ? msg : "Unknown Lua error";
-        
-        // Intercepta sinal oculto de saída do OS ("OS_EXIT")
-        if (errorMsg.indexOf("OS_EXIT") != -1) {
-            lua_pop(L, 1); // Remove o erro da pilha
-            return;        // Sai limpo sem exibir tela vermelha
-        }
-        
-        // Intercepta sinais de Out Of Memory (OOM)
-        if (errorMsg.indexOf("alloc") != -1 || errorMsg.indexOf("out of memory") != -1) {
-            tft.fillScreen(TFT_RED);
-            tft.setTextColor(TFT_WHITE, TFT_RED);
-            tft.drawString("Out Of Ram Error", 10, 20, 4);
-            tft.drawString("Please turn off WiFi in", 10, 60, 2);
-            tft.drawString("setting to free the ram", 10, 80, 2);
-            tft.drawString("and make this app running", 10, 100, 2);
-            
-            tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-            tft.setTextColor(TFT_RED, TFT_WHITE);
-            tft.drawString("X", 215, 8, 2);
-            
-            uint16_t tx, ty;
-            while(true) {
-                if (getTouch(&tx, &ty)) {
-                    if (tx >= 200 && ty <= 40) break;
-                }
-                BoardKey key = getKeyInput();
-                if (key != BOARD_KEY_NONE) break;
-                delay(50);
-            }
-            lua_pop(L, 1);
-            return;
-        }
-        
-        Serial.print("Lua Execution Error: ");
-        Serial.println(errorMsg);
-        
-        tft.fillScreen(TFT_RED);
-        tft.setTextColor(TFT_WHITE, TFT_RED);
-        tft.setTextDatum(TL_DATUM);
-        tft.drawString("LUA EXCEPTION!", 10, 10, 4);
-        
-        // Configuração de quebra de linha automática
-        tft.setTextWrap(true, true);
-        tft.setTextFont(2);
-        tft.setCursor(10, 45);
-        tft.print(errorMsg);
-        
-        // Botão 'X' para fechar
-        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-        tft.setTextColor(TFT_RED, TFT_WHITE);
-        tft.drawString("X", 215, 8, 2);
-        
-        uint16_t tx, ty;
-        while(true) {
-            if (getTouch(&tx, &ty)) {
-                if (tx >= 200 && ty <= 40) break;
-            }
-            BoardKey key = getKeyInput();
-            if (key != BOARD_KEY_NONE) break;
-            delay(50);
-        }
+    if (result == LUA_OK) return;
+
+    const char* msg = lua_tostring(L, -1);
+    String errorMsg = msg ? msg : "Unknown Lua error";
+
+    if (isOsExitMessage(errorMsg)) {
+        lua_pop(L, 1);
+        return;
     }
-    lua_pop(L, 1); // Remove o resultado ou mensagem de erro da pilha do Lua
+
+    if (isOomMessage(errorMsg)) {
+        showOomScreen("Lua");
+        lua_pop(L, 1);
+        return;
+    }
+
+    showExceptionScreen("LUA EXCEPTION!", errorMsg);
+    lua_pop(L, 1);
 }
 
 static void my_free(void *udata, void *ptr) {
@@ -193,121 +199,38 @@ static void my_free(void *udata, void *ptr) {
 }
 
 // Dummy fatal error handler if duktape aborts
-static void my_fatal(void *udata, const char *msg) {
-    Serial.print("Duktape fatal error: ");
-    Serial.println(msg ? msg : "no message");
-
-    tft.fillScreen(TFT_RED);
-    tft.setTextColor(TFT_WHITE, TFT_RED);
-    tft.drawString("Out Of Ram Error", 10, 20, 4);
-    tft.drawString("Please turn off WiFi in", 10, 60, 2);
-    tft.drawString("setting to free the ram", 10, 80, 2);
-    tft.drawString("and make this app running", 10, 100, 2);
-    
-    // Draw an 'X' to close/reboot
-    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-    tft.setTextColor(TFT_RED, TFT_WHITE);
-    tft.drawString("X", 215, 8, 2);
-    
-    // Wait for user to touch the X before rebooting!
-    uint16_t tx, ty;
-    while(true) {
-        if (getTouch(&tx, &ty)) {
-            if (tx >= 200 && ty <= 40) break;
-        }
-        delay(50);
-    }
-    
-    if (msg && strstr(msg, "alloc")) {
-        Serial.println("out of memory");
-    }
-    ESP.restart(); // Reboot when they close it
+static void my_fatal(void* udata, const char* msg) {
+    Serial.printf("Duktape fatal error: %s\n", msg ? msg : "no message");
+    showOomScreen("Duktape");
+    ESP.restart();
 }
 
 void HarixKernel::checkJSError(duk_context *ctx, duk_int_t result) {
-    if (result != 0) {
-        String errorMsg = "";
-        if (duk_is_error(ctx, -1)) {
-            duk_get_prop_string(ctx, -1, "stack");
-            errorMsg = duk_safe_to_string(ctx, -1);
-            duk_pop(ctx);
-        } else {
-            errorMsg = duk_safe_to_string(ctx, -1);
-        }
-        
-        // Intercept hidden OS Exit signal
-        if (errorMsg.indexOf("OS_EXIT") != -1) {
-            duk_pop(ctx); // pop the error
-            return; // Cleanly exit execution without printing red screen
-        }
-        
-        // Intercept OOM signals
-        if (errorMsg.indexOf("alloc") != -1 || errorMsg.indexOf("out of memory") != -1) {
-            tft.fillScreen(TFT_RED);
-            tft.setTextColor(TFT_WHITE, TFT_RED);
-            tft.drawString("Out Of Ram Error", 10, 20, 4);
-            tft.drawString("Please turn off WiFi in", 10, 60, 2);
-            tft.drawString("setting to free the ram", 10, 80, 2);
-            tft.drawString("and make this app running", 10, 100, 2);
-            
-            // Draw an 'X' to close
-            tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-            tft.setTextColor(TFT_RED, TFT_WHITE);
-            tft.drawString("X", 215, 8, 2);
-            
-            uint16_t tx, ty;
-            while(true) {
-                if (getTouch(&tx, &ty)) {
-                    if (tx >= 200 && ty <= 40) break;
-                }
-                
-                BoardKey key = getKeyInput();
-                if (key != BOARD_KEY_NONE) {
-                    break; 
-                }
+    if (result == 0) return;
 
-                delay(50);
-            }
-            duk_pop(ctx);
-            return;
-        }
-        
-        Serial.print("JS Execution Error: ");
-        Serial.println(errorMsg);
-        
-        tft.fillScreen(TFT_RED);
-        tft.setTextColor(TFT_WHITE, TFT_RED);
-        tft.setTextDatum(TL_DATUM);
-        tft.drawString("JS EXCEPTION!", 10, 10, 4);
-        
-        // --- CONFIGURAÇÃO DA QUEBRA DE LINHA AUTOMÁTICA ---
-        tft.setTextWrap(true, true); // Ativa wrap nos eixos X e Y
-        tft.setTextFont(2);          // Fonte padrão tamanho 2
-        tft.setCursor(10, 45);       // Define a posição inicial do cursor
-
-        // Escreve a mensagem de erro inteira; o print cuida do wrap de borda e dos \n
-        tft.print(errorMsg);
-        
-        // Draw an 'X' to close
-        tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-        tft.setTextColor(TFT_RED, TFT_WHITE);
-        tft.drawString("X", 215, 8, 2);
-        
-        uint16_t tx, ty;
-        while(true) {
-            if (getTouch(&tx, &ty)) {
-                if (tx >= 200 && ty <= 40) break;
-            }
-
-            BoardKey key = getKeyInput();
-            if (key != BOARD_KEY_NONE) {
-                break;
-            }
-
-            delay(50);
-        }
+    // Extrai mensagem — Duktape: se for Error, pega `.stack`
+    String errorMsg;
+    if (duk_is_error(ctx, -1)) {
+        duk_get_prop_string(ctx, -1, "stack");
+        errorMsg = duk_safe_to_string(ctx, -1);
+        duk_pop(ctx);  // remove stack
+    } else {
+        errorMsg = duk_safe_to_string(ctx, -1);
     }
-    duk_pop(ctx); // pop result or error
+
+    if (isOsExitMessage(errorMsg)) {
+        duk_pop(ctx);
+        return;
+    }
+
+    if (isOomMessage(errorMsg)) {
+        showOomScreen("Duktape");
+        duk_pop(ctx);
+        return;
+    }
+
+    showExceptionScreen("JS EXCEPTION!", errorMsg);
+    duk_pop(ctx);
 }
 
 void HarixKernel::executeJS(const char* jsCode) {
@@ -378,250 +301,6 @@ String HarixKernel::checkSyntax(const char* jsCode) {
     return params.result;
 }
 
-// Writer callback para lua_dump
-int luaDumpWriter(lua_State* L, const void* p, size_t sz, void* ud) {
-    LuaDumpBuffer* buf = (LuaDumpBuffer*)ud;
-    
-    if (buf->size + sz > buf->capacity) {
-        size_t newCapacity = (buf->capacity == 0) ? 1024 : buf->capacity * 2;
-        while (newCapacity < buf->size + sz) {
-            newCapacity *= 2;
-        }
-        
-        uint8_t* newData = (uint8_t*)realloc(buf->data, newCapacity);
-        if (!newData) {
-            return 1; // Erro de alocação
-        }
-        
-        buf->data = newData;
-        buf->capacity = newCapacity;
-    }
-    
-    memcpy(buf->data + buf->size, p, sz);
-    buf->size += sz;
-    
-    return 0;
-}
-
-// Salva metadados
-bool saveBytecodeMeta(const char* luacPath, const String& sourceMD5, size_t sourceSize) {
-    String metaPath = String(luacPath) + ".meta";
-    String content = sourceMD5 + "|" + String(sourceSize) + "|" + String(millis());
-    return FileSystem::writeTextFile(metaPath.c_str(), content.c_str());
-}
-
-// Carrega metadados
-BytecodeMeta loadBytecodeMeta(const char* luacPath) {
-    BytecodeMeta meta = {"", 0, 0};
-    
-    String metaPath = String(luacPath) + ".meta";
-    if (!FileSystem::exists(metaPath.c_str())) {
-        return meta;
-    }
-    
-    String content = FileSystem::readTextFile(metaPath.c_str());
-    if (content.length() == 0) {
-        return meta;
-    }
-    
-    int sep1 = content.indexOf('|');
-    int sep2 = (sep1 >= 0) ? content.indexOf('|', sep1 + 1) : -1;
-    
-    if (sep1 > 0) {
-        meta.sourceMD5 = content.substring(0, sep1);
-    }
-    
-    if (sep1 >= 0 && sep2 > sep1) {
-        meta.sourceSize = content.substring(sep1 + 1, sep2).toInt();
-    }
-    
-    if (sep2 >= 0) {
-        meta.sourceTimestamp = content.substring(sep2 + 1).toInt();
-    }
-    
-    return meta;
-}
-
-// Verifica se precisa recompilar
-bool needsRecompile(const char* luaPath, const char* luacPath) {
-    // Se não tem .luac, precisa compilar
-    if (!FileSystem::exists(luacPath)) {
-        return true;
-    }
-    
-    // Se não tem .lua, usa .luac (não precisa recompilar)
-    if (!FileSystem::exists(luaPath)) {
-        return false;
-    }
-    
-    // Carrega metadados
-    BytecodeMeta meta = loadBytecodeMeta(luacPath);
-    
-    // Sem metadados, recompila
-    if (meta.sourceMD5.length() == 0) {
-        return true;
-    }
-    
-    // Compara MD5
-    String currentMD5 = FileSystem::getFileMD5(luaPath);
-    if (currentMD5 != meta.sourceMD5) {
-        return true; // Fonte mudou
-    }
-    
-    // Compara tamanho
-    size_t currentSize = FileSystem::getFileSize(luaPath);
-    if (currentSize != meta.sourceSize) {
-        return true; // Tamanho diferente
-    }
-    
-    return false; // Bytecode está atualizado
-}
-
-// Compila e salva bytecode BINÁRIO
-bool compileAndSaveBytecode(lua_State* L, const char* luaPath, const char* luacPath) {
-    // Lê código fonte
-    String source = FileSystem::readTextFile(luaPath);
-    if (source.length() == 0) {
-        Serial.println("Failed to read source for compilation");
-        return false;
-    }
-    
-    // Compila o código
-    int rc = luaL_loadbuffer(L, source.c_str(), source.length(), luaPath);
-    if (rc != LUA_OK) {
-        Serial.print("Compilation error: ");
-        Serial.println(lua_tostring(L, -1));
-        lua_pop(L, 1);
-        return false;
-    }
-    
-    // Dump bytecode para buffer
-    LuaDumpBuffer buf = {nullptr, 0, 0};
-    rc = lua_dump(L, luaDumpWriter, &buf);
-    
-    if (rc != 0) {
-        Serial.println("Failed to dump bytecode");
-        lua_pop(L, 1);
-        if (buf.data) free(buf.data);
-        return false;
-    }
-    
-    // Remove o chunk da pilha
-    lua_pop(L, 1);
-    
-    // Salva bytecode BINÁRIO
-    bool saved = FileSystem::writeBinaryFile(luacPath, buf.data, buf.size);
-    
-    Serial.print("Bytecode saved: ");
-    Serial.print(buf.size);
-    Serial.println(" bytes");
-    
-    free(buf.data);
-    
-    if (!saved) {
-        Serial.println("Failed to save bytecode");
-        return false;
-    }
-    
-    // Salva metadados
-    String md5 = FileSystem::getFileMD5(luaPath);
-    size_t size = FileSystem::getFileSize(luaPath);
-    saveBytecodeMeta(luacPath, md5, size);
-    
-    return true;
-}
-
-// Executa bytecode BINÁRIO
-bool executeBytecode(lua_State* L, const char* luacPath) {
-    // Obtém tamanho do arquivo
-    size_t fileSize = FileSystem::getFileSize(luacPath);
-    if (fileSize == 0) {
-        Serial.println("Bytecode file is empty");
-        return false;
-    }
-    
-    uint8_t* buffer = nullptr;
-
-    // Primeiro tenta PSRAM, se disponível
-    if (psramFound()) {
-        buffer = (uint8_t*)heap_caps_malloc(
-            fileSize,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
-        );
-
-        if (buffer) {
-            Serial.printf(
-                "Bytecode allocated in PSRAM: %u bytes\n",
-                fileSize
-            );
-        } else {
-            Serial.println(
-                "PSRAM allocation failed, trying internal RAM..."
-            );
-        }
-    }
-
-    // Se não tem PSRAM ou a alocação na PSRAM falhou,
-    // tenta a RAM interna com malloc()
-    if (!buffer) {
-        // Verifica se é muito grande (limite de segurança)
-        if (fileSize > 150000) {
-            Serial.println("Bytecode file too large");
-            return false;
-        }
-
-        buffer = (uint8_t*)malloc(fileSize);
-
-        if (buffer) {
-            Serial.printf(
-                "Bytecode allocated in internal RAM: %u bytes\n",
-                fileSize
-            );
-        }
-    }
-
-    // Falha total
-    if (!buffer) {
-        Serial.println(
-            "Failed to allocate memory for bytecode "
-            "(PSRAM and internal RAM)"
-        );
-        return false;
-    }
-    
-    // Lê o bytecode binário
-    size_t bytesRead = FileSystem::readBinaryFile(luacPath, buffer, fileSize);
-    if (bytesRead != fileSize) {
-        Serial.println("Failed to read complete bytecode");
-        free(buffer);
-        return false;
-    }
-    
-    // Verifica assinatura Lua (\x1bLua)
-    if (bytesRead < 4 || 
-        buffer[0] != 0x1B || 
-        buffer[1] != 'L' || 
-        buffer[2] != 'u' || 
-        buffer[3] != 'a') {
-        Serial.println("Invalid bytecode signature");
-        free(buffer);
-        return false;
-    }
-    
-    // Carrega o bytecode
-    int rc = luaL_loadbuffer(L, (const char*)buffer, bytesRead, luacPath);
-    free(buffer);
-    
-    if (rc != LUA_OK) {
-        Serial.print("Failed to load bytecode: ");
-        Serial.println(lua_tostring(L, -1));
-        lua_pop(L, 1);
-        return false;
-    }
-    
-    return true;
-}
-
 HarixKernel::Engine HarixKernel::detectEngine(const String& filePath)
 {
     if (filePath.endsWith(".lua") || filePath.endsWith(".luac"))
@@ -638,34 +317,8 @@ HarixKernel::Engine HarixKernel::detectEngine(const String& filePath)
 
 static void showOutOfRamError(const char* engineName)
 {
-    Serial.print("Failed to create ");
-    Serial.print(engineName);
-    Serial.println(" state/heap for app.");
-
-    tft.fillScreen(TFT_RED);
-    tft.setTextColor(TFT_WHITE, TFT_RED);
-    tft.drawString("Out Of Ram Error", 10, 20, 4);
-    tft.drawString("Please turn off WiFi in", 10, 60, 2);
-    tft.drawString("setting to free the ram", 10, 80, 2);
-    tft.drawString("and make this app running", 10, 100, 2);
-
-    tft.fillRoundRect(200, 0, 40, 30, 5, TFT_WHITE);
-    tft.setTextColor(TFT_RED, TFT_WHITE);
-    tft.drawString("X", 215, 8, 2);
-
-    uint16_t tx, ty;
-    while (true)
-    {
-        if (getTouch(&tx, &ty))
-        {
-            if (tx >= 200 && ty <= 40) break;
-        }
-
-        BoardKey key = getKeyInput();
-        if (key == BOARD_KEY_ESC) break;
-
-        delay(50);
-    }
+    Serial.printf("Failed to create %s state/heap for app.\n", engineName);
+    showOomScreen(engineName);
 }
 
 void HarixKernel::runFile(const char* filePath)
@@ -812,7 +465,10 @@ void HarixKernel::runLuaFile(const char* filePath)
         luaL_openlibs(L);
         lua_atpanic(L, my_lua_panic);
         LuaBindings::init(L);
-        
+
+        // ------------------------------------------------------------
+        // 1) Diretório do app
+        // ------------------------------------------------------------
         String appDirectory = path;
         int lastSlash = appDirectory.lastIndexOf('/');
         if (lastSlash > 0) {
@@ -820,26 +476,28 @@ void HarixKernel::runLuaFile(const char* filePath)
         } else {
             appDirectory = "/local";
         }
-        
+
         ModuleCache::setAppDirectory(appDirectory);
-        
         setupCustomRequire(L);
-        
+
         Serial.print("App directory: ");
         Serial.println(appDirectory);
-        
-        String luaPath = path;
+
+        // ------------------------------------------------------------
+        // 2) Normaliza entrada (aceita .lua ou .luac)
+        // ------------------------------------------------------------
+        String luaPath;
         String luacPath;
 
-        if (luaPath.endsWith(".luac"))
+        if (path.endsWith(".luac"))
         {
-            luacPath = luaPath;
-            luaPath = luacPath.substring(0, luacPath.length() - 5) + ".lua";
+            luacPath = path;
+            luaPath  = path.substring(0, path.length() - 5) + ".lua";
         }
-        else if (luaPath.endsWith(".lua"))
+        else if (path.endsWith(".lua"))
         {
-            int lastDotLua = luaPath.lastIndexOf(".lua");
-            luacPath = luaPath.substring(0, lastDotLua) + ".luac";
+            luaPath  = path;
+            luacPath = ModuleCache::getBinPath(luaPath);   // app/bin/...
         }
         else
         {
@@ -849,20 +507,36 @@ void HarixKernel::runLuaFile(const char* filePath)
             return;
         }
 
-        Serial.print("Lua source: ");
+        Serial.print("Lua source:   ");
         Serial.println(luaPath);
         Serial.print("Lua bytecode: ");
         Serial.println(luacPath);
+        Serial.print("Lua meta:     ");
+        Serial.println(ModuleCache::getMetaPath(luaPath));
 
-        bool hasLua = FileSystem::exists(luaPath.c_str());
-        bool hasLuac = FileSystem::exists(luacPath.c_str());
+        // ------------------------------------------------------------
+        // 3) Detecta o que existe
+        //    - dev:  app/main.lua  +  app/bin/main.luac
+        //    - prod: app/main.lua  e/ou app/main.luac (root)
+        // ------------------------------------------------------------
+        bool hasLua  = FileSystem::exists(luaPath.c_str());
 
-        Serial.print("Has .lua: ");
+        // Fallback de produção: .luac ao lado do .lua no root
+        String prodLuac = luaPath;
+        if (prodLuac.endsWith(".lua"))
+            prodLuac = prodLuac.substring(0, prodLuac.length() - 4) + ".luac";
+
+        bool hasLuacBin  = FileSystem::exists(luacPath.c_str());
+        bool hasLuacProd = (prodLuac != luacPath) && FileSystem::exists(prodLuac.c_str());
+
+        Serial.print("Has .lua:        ");
         Serial.println(hasLua ? "YES" : "NO");
-        Serial.print("Has .luac: ");
-        Serial.println(hasLuac ? "YES" : "NO");
+        Serial.print("Has .luac(bin):  ");
+        Serial.println(hasLuacBin ? "YES" : "NO");
+        Serial.print("Has .luac(prod): ");
+        Serial.println(hasLuacProd ? "YES" : "NO");
 
-        if (!hasLua && !hasLuac)
+        if (!hasLua && !hasLuacBin && !hasLuacProd)
         {
             Serial.println("No Lua files found!");
             lua_close(L);
@@ -870,7 +544,17 @@ void HarixKernel::runLuaFile(const char* filePath)
             return;
         }
 
-        int rc = LUA_OK;
+        // Se só existe o .luac de produção, usa ele
+        if (hasLuacProd && !hasLua && !hasLuacBin)
+        {
+            luacPath = prodLuac;
+            hasLuacBin = true;
+        }
+
+        // ------------------------------------------------------------
+        // 4) Fallback para fonte
+        // ------------------------------------------------------------
+        int  rc     = LUA_OK;
         bool loaded = false;
 
         auto fallbackToSource = [&]()
@@ -879,39 +563,58 @@ void HarixKernel::runLuaFile(const char* filePath)
             String content = FileSystem::readTextFile(luaPath.c_str());
             if (content.length() > 0)
             {
-                rc = luaL_loadbuffer(L, content.c_str(), content.length(), luaPath.c_str());
+                rc = luaL_loadbuffer(L, content.c_str(), content.length(),
+                                     luaPath.c_str());
                 loaded = (rc == LUA_OK);
             }
         };
 
-        if (hasLuac && !hasLua)
+        // ------------------------------------------------------------
+        // 5) Decide: recompilar / usar cache / só bytecode
+        // ------------------------------------------------------------
+        bool needCompile = false;
+
+        if (hasLua && !hasLuacBin)
         {
-            Serial.println("Loading bytecode directly...");
-            loaded = executeBytecode(L, luacPath.c_str());
+            Serial.println("Compiling source (no bytecode yet)...");
+            needCompile = true;
         }
-        else if (hasLua && !hasLuac)
+        else if (hasLua && hasLuacBin)
         {
-            Serial.println("Compiling source...");
-            if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str()))
-                loaded = executeBytecode(L, luacPath.c_str());
+            needCompile = ModuleCache::needsRecompile(luaPath, luacPath);
+            if (needCompile)
+                Serial.println("Source changed, recompiling...");
             else
-                fallbackToSource();
+                Serial.println("Using cached bytecode");
         }
         else
         {
-            if (needsRecompile(luaPath.c_str(), luacPath.c_str()))
+            Serial.println("Loading bytecode directly...");
+        }
+
+        if (needCompile)
+        {
+            if (ModuleCache::compileToLuac(L, luaPath, luacPath))
             {
-                Serial.println("Source changed, recompiling...");
-                if (compileAndSaveBytecode(L, luaPath.c_str(), luacPath.c_str()))
-                    loaded = executeBytecode(L, luacPath.c_str());
-                else
-                    fallbackToSource();
+                loaded = ModuleCache::loadLuac(L, luacPath);
             }
             else
             {
-                Serial.println("Using cached bytecode");
-                loaded = executeBytecode(L, luacPath.c_str());
+                fallbackToSource();
             }
+        }
+        else if (hasLuacBin)
+        {
+            loaded = ModuleCache::loadLuac(L, luacPath);
+            if (!loaded && hasLua)
+            {
+                // .luac corrompido → tenta fonte
+                fallbackToSource();
+            }
+        }
+        else
+        {
+            fallbackToSource();
         }
 
         if (!loaded)
@@ -926,6 +629,9 @@ void HarixKernel::runLuaFile(const char* filePath)
             return;
         }
 
+        // ------------------------------------------------------------
+        // 6) Executa
+        // ------------------------------------------------------------
         rc = lua_pcall(L, 0, LUA_MULTRET, 0);
         checkLuaError(L, rc);
 
@@ -934,133 +640,150 @@ void HarixKernel::runLuaFile(const char* filePath)
     });
 }
 
+// Loader "puro": retorna a função (não executa)
 static int lua_custom_loader(lua_State* L) {
-    const char* moduleName = luaL_checkstring(L, 1);
+    size_t nameLen = 0;
+    const char* namePtr = luaL_checklstring(L, 1, &nameLen);
+    String moduleName(namePtr, nameLen);
     
-    String modulePath = ModuleCache::resolveModulePath(L, moduleName);
-    
+    String modulePath = ModuleCache::resolveModulePath(L, moduleName.c_str());
     if (modulePath.length() == 0) {
-        lua_pushfstring(L, "\n\tMódulo '%s' não encontrado", moduleName);
-        return 1;
+        lua_pushfstring(L, "\n\tMódulo '%s' não encontrado", moduleName.c_str());
+        return 1;   // loader retorna mensagem de erro
     }
     
+    bool ok = false;
     if (modulePath.endsWith(".luac")) {
-        Serial.printf("[Loader] Carregando bytecode existente: %s\n", modulePath.c_str());
-        
-        if (!ModuleCache::loadLuac(L, modulePath.c_str())) {
-            lua_pushfstring(L, "\n\tErro ao carregar bytecode '%s'", moduleName);
-            return 1;
-        }
-        
-        return 1;
-        
+        ok = ModuleCache::loadLuac(L, modulePath);
     } else {
         String luacPath = ModuleCache::getLuacPath(modulePath);
-        
         if (ModuleCache::needsRecompile(modulePath, luacPath)) {
-            Serial.printf("[Loader] Compilando: %s -> %s\n", 
-                         modulePath.c_str(), luacPath.c_str());
-            
-            if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
+            if (ModuleCache::compileToLuac(L, modulePath, luacPath)) {
+                ok = ModuleCache::loadLuac(L, luacPath);
+            } else {
                 String source = FileSystem::readTextFile(modulePath.c_str());
                 if (source.length() > 0) {
-                    if (luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) == LUA_OK) {
-                        return 1;
-                    }
-                }
-                lua_pushfstring(L, "\n\tErro ao compilar '%s'", moduleName);
-                return 1;
-            }
-        }
-        
-        if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
-            lua_pushfstring(L, "\n\tErro ao carregar '%s'", moduleName);
-        }
-        
-        return 1;
-    }
-}
-
-static int lua_custom_require(lua_State* L) {
-    const char* moduleName = luaL_checkstring(L, 1);
-    
-    // Verifica cache
-    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
-    lua_getfield(L, -1, moduleName);
-    
-    if (lua_toboolean(L, -1)) {
-        Serial.printf("[Require] Módulo '%s' do cache\n", moduleName);
-        lua_remove(L, -2);  // Remove _LOADED
-        return 1;
-    }
-    
-    lua_pop(L, 2);  // Remove nil e _LOADED
-    
-    // Resolve caminho
-    String modulePath = ModuleCache::resolveModulePath(L, moduleName);
-    
-    if (modulePath.length() == 0) {
-        luaL_error(L, "Módulo '%s' não encontrado", moduleName);
-        return 0;
-    }
-    
-    // ============================================
-    // CORREÇÃO: Verifica se já é .luac
-    // ============================================
-    
-    if (modulePath.endsWith(".luac")) {
-        // Já é bytecode - carrega diretamente
-        Serial.printf("[Require] Carregando bytecode: %s\n", modulePath.c_str());
-        
-        if (!ModuleCache::loadLuac(L, modulePath.c_str())) {
-            luaL_error(L, "Erro ao carregar bytecode '%s'", moduleName);
-            return 0;
-        }
-        
-    } else {
-        // É .lua - compila se necessário
-        String luacPath = ModuleCache::getLuacPath(modulePath);
-        
-        if (ModuleCache::needsRecompile(modulePath, luacPath)) {
-            Serial.printf("[Require] Compilando módulo '%s'\n", moduleName);
-            
-            if (!ModuleCache::compileToLuac(L, modulePath.c_str(), luacPath.c_str())) {
-                // Fallback para fonte
-                String source = FileSystem::readTextFile(modulePath.c_str());
-                if (source.length() == 0 || 
-                    luaL_loadbuffer(L, source.c_str(), source.length(), modulePath.c_str()) != LUA_OK) {
-                    luaL_error(L, "Erro ao carregar módulo '%s'", moduleName);
-                    return 0;
-                }
-            } else {
-                // Carrega o .luac recém-compilado
-                if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
-                    luaL_error(L, "Erro ao carregar '%s'", moduleName);
-                    return 0;
+                    ok = (luaL_loadbuffer(L, source.c_str(), source.length(),
+                                          modulePath.c_str()) == 0);
                 }
             }
         } else {
-            // Usa .luac cacheado
-            if (!ModuleCache::loadLuac(L, luacPath.c_str())) {
-                luaL_error(L, "Erro ao carregar '%s'", moduleName);
-                return 0;
-            }
+            ok = ModuleCache::loadLuac(L, luacPath);
         }
     }
     
-    // Executa o módulo
-    if (lua_pcall(L, 0, 1, 0) != LUA_OK) {
+    if (!ok) {
+        lua_pushfstring(L, "\n\tErro ao carregar '%s'", moduleName.c_str());
+        return 1;
+    }
+    return 1;   // deixa a função na pilha
+}
+
+static int lua_custom_require(lua_State* L) {
+    // Garante que o nome é string (Lua 5.1: luaL_checkstring já converte)
+    size_t nameLen = 0;
+    const char* namePtr = luaL_checklstring(L, 1, &nameLen);
+    String moduleName(namePtr, nameLen);
+    
+    // ------------------------------------------------------------
+    // 1) Verifica cache _LOADED
+    // ------------------------------------------------------------
+    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");   // [ _LOADED ]
+    lua_getfield(L, -1, moduleName.c_str());         // [ _LOADED, _LOADED[name] ]
+    
+    if (lua_toboolean(L, -1)) {
+        // Já carregado: devolve
+        lua_remove(L, -2);                            // [ _LOADED[name] ]
+        Serial.printf("[Require] '%s' do cache\n", moduleName.c_str());
+        return 1;
+    }
+    
+    lua_pop(L, 2);                                    // limpa
+    
+    // ------------------------------------------------------------
+    // 2) Resolve caminho
+    // ------------------------------------------------------------
+    String modulePath = ModuleCache::resolveModulePath(L, moduleName.c_str());
+    if (modulePath.length() == 0) {
+        return luaL_error(L, "Módulo '%s' não encontrado", moduleName.c_str());
+    }
+    
+    // ------------------------------------------------------------
+    // 3) Sentinel contra loop circular
+    //    _LOADED[name] = true  ANTES de rodar
+    // ------------------------------------------------------------
+    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");   // [ _LOADED ]
+    lua_pushboolean(L, 1);                            // [ _LOADED, true ]
+    lua_setfield(L, -2, moduleName.c_str());          // _LOADED[name] = true
+    lua_pop(L, 1);                                    // limpa
+    
+    // ------------------------------------------------------------
+    // 4) Carrega a função (chunk) — deixa 1 valor na pilha
+    // ------------------------------------------------------------
+    bool ok = false;
+    
+    if (modulePath.endsWith(".luac")) {
+        Serial.printf("[Require] Carregando bytecode: %s\n", modulePath.c_str());
+        ok = ModuleCache::loadLuac(L, modulePath);
+    } else {
+        String luacPath = ModuleCache::getLuacPath(modulePath);
+        
+        if (ModuleCache::needsRecompile(modulePath, luacPath)) {
+            Serial.printf("[Require] Compilando '%s'\n", moduleName.c_str());
+            
+            if (ModuleCache::compileToLuac(L, modulePath, luacPath)) {
+                ok = ModuleCache::loadLuac(L, luacPath);
+            } else {
+                // fallback para fonte
+                String source = FileSystem::readTextFile(modulePath.c_str());
+                if (source.length() > 0) {
+                    ok = (luaL_loadbuffer(L, source.c_str(), source.length(),
+                                          modulePath.c_str()) == 0);
+                }
+            }
+        } else {
+            ok = ModuleCache::loadLuac(L, luacPath);
+        }
+    }
+    
+    if (!ok) {
+        // Remove sentinel antes de propagar erro
+        lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+        lua_pushnil(L);
+        lua_setfield(L, -2, moduleName.c_str());
+        lua_pop(L, 1);
+        return luaL_error(L, "Erro ao carregar módulo '%s'", moduleName.c_str());
+    }
+    
+    // ------------------------------------------------------------
+    // 5) Executa (pcall) — agora tem [ chunk ]
+    // ------------------------------------------------------------
+    if (lua_pcall(L, 0, 1, 0) != 0) {
+        // Erro: remove sentinel e propaga
+        lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+        lua_pushnil(L);
+        lua_setfield(L, -2, moduleName.c_str());
+        lua_pop(L, 1);
         return lua_error(L);
     }
     
-    // Salva no cache
-    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
-    lua_pushvalue(L, -2);
-    lua_setfield(L, -2, moduleName);
-    lua_pop(L, 1);
+    // ------------------------------------------------------------
+    // 6) Normaliza resultado: se nil, vira true
+    // ------------------------------------------------------------
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushboolean(L, 1);
+    }
     
-    Serial.printf("[Require] Módulo '%s' carregado com sucesso\n", moduleName);
+    // ------------------------------------------------------------
+    // 7) Salva em _LOADED[name]
+    // ------------------------------------------------------------
+    lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");   // [ result, _LOADED ]
+    lua_pushvalue(L, -2);                             // [ result, _LOADED, result ]
+    lua_setfield(L, -2, moduleName.c_str());          // _LOADED[name] = result
+    lua_pop(L, 1);                                    // [ result ]
     
+    Serial.printf("[Require] '%s' carregado\n", moduleName.c_str());
     return 1;
 }
 

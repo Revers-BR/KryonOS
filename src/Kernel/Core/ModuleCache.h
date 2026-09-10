@@ -23,6 +23,8 @@ public:
     static String getAppDirectory() { return _appDirectory; }
     
     // Geração de caminhos
+    static String getBinPath(const String& luaPath);
+    static String getMetaPath(const String& luaPath);
     static String getLuacPath(const String& luaPath);
     static String resolveModulePath(lua_State* L, const char* moduleName);
     
