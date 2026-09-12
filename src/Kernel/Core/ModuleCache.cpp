@@ -6,6 +6,10 @@
 std::vector<ModuleCache::CacheEntry> ModuleCache::_cache;
 String ModuleCache::_appDirectory = "";
 
+ModuleCache::ProgressCallback ModuleCache::_progressCb = nullptr;
+int ModuleCache::_progressCurrent = 0;
+int ModuleCache::_progressTotal   = 0;
+
 // ============================================
 // Helpers internos
 // ============================================
@@ -46,6 +50,22 @@ static bool ensureParentDirs(const String& path) {
         idx = path.indexOf('/', idx + 1);
     }
     return true;
+}
+
+void ModuleCache::setProgressCallback(ProgressCallback cb) {
+    _progressCb = cb;
+}
+
+void ModuleCache::reportProgress(const char* action, const char* name) {
+    if (_progressCb) {
+        _progressCb(action, name, _progressCurrent, _progressTotal);
+    
+    }
+}
+
+void ModuleCache::setProgressTotal(int total) {
+    _progressTotal = total;
+    _progressCurrent = 0;
 }
 
 // ============================================
@@ -200,6 +220,13 @@ static int moduleDumpWriter(lua_State* /*L*/, const void* p, size_t sz, void* ud
 bool ModuleCache::compileToLuac(lua_State* L, const String& luaPath, const String& luacPath) {
     Serial.printf("[ModuleCache] Compilando %s\n", luaPath.c_str());
 
+    String name = luaPath;
+    int slash = name.lastIndexOf('/');
+    if (slash >= 0) name = name.substring(slash + 1);
+    if (name.endsWith(".lua")) name = name.substring(0, name.length() - 4);
+
+    reportProgress("Compilando", name.c_str());
+
     // Lê código fonte
     String source = FileSystem::readTextFile(luaPath.c_str());
     if (source.length() == 0) {
@@ -272,6 +299,14 @@ static const uint8_t kLuaVersion51  = 0x51;
 static const size_t  kLuaHeaderSize = 12;   // 5.1 header
 
 bool ModuleCache::loadLuac(lua_State* L, const String& luacPath) {
+
+    String name = luacPath;
+    int slash = name.lastIndexOf('/');
+    if (slash >= 0) name = name.substring(slash + 1);
+    if (name.endsWith(".luac")) name = name.substring(0, name.length() - 5);
+
+    reportProgress("Carregando", name.c_str());
+
     // ------------------------------------------------------------
     // 1) Tamanho
     // ------------------------------------------------------------

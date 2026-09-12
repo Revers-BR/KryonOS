@@ -7,6 +7,7 @@
 #include "Runtime/WrenRuntime.h"
 #include "Kernel/Core/EngineTaskRunner.h"
 #include "../../File System/FileSystem.h"
+#include "LoadingScreen.h"
 
 lua_State *HarixKernel::L = nullptr;
 duk_context *HarixKernel::ctx = nullptr;
@@ -43,6 +44,36 @@ static void* psram_or_internal_realloc(void* ptr, size_t size) {
         p = realloc(ptr, size);
     }
     return p;
+}
+
+// Helper: conta arquivos .lua recursivamente, ignorando bin/ e meta/
+static int countLuaFilesRecursive(const String& dir)
+{
+    int count = 0;
+    const int kMaxFiles = 200;
+    String* files = new String[kMaxFiles];
+    if (!files) return 0;
+
+    int n = FileSystem::listDir(dir.c_str(), files, kMaxFiles);
+    if (n < 0) n = 0;
+
+    for (int i = 0; i < n; i++) {
+        String name = files[i];
+        String full = dir;
+        if (!full.endsWith("/")) full += "/";
+        full += name;
+
+        if (FileSystem::isDirectory(full.c_str())) {
+            // Pula diretórios de saída
+            if (name == "bin" || name == "meta") continue;
+            count += countLuaFilesRecursive(full);
+        } else if (name.endsWith(".lua")) {
+            count++;
+        }
+    }
+
+    delete[] files;
+    return count;
 }
 
 // ============================================================
@@ -497,7 +528,7 @@ void HarixKernel::runLuaFile(const char* filePath)
         else if (path.endsWith(".lua"))
         {
             luaPath  = path;
-            luacPath = ModuleCache::getBinPath(luaPath);   // app/bin/...
+            luacPath = ModuleCache::getBinPath(luaPath);
         }
         else
         {
@@ -516,12 +547,9 @@ void HarixKernel::runLuaFile(const char* filePath)
 
         // ------------------------------------------------------------
         // 3) Detecta o que existe
-        //    - dev:  app/main.lua  +  app/bin/main.luac
-        //    - prod: app/main.lua  e/ou app/main.luac (root)
         // ------------------------------------------------------------
         bool hasLua  = FileSystem::exists(luaPath.c_str());
 
-        // Fallback de produção: .luac ao lado do .lua no root
         String prodLuac = luaPath;
         if (prodLuac.endsWith(".lua"))
             prodLuac = prodLuac.substring(0, prodLuac.length() - 4) + ".luac";
@@ -544,7 +572,6 @@ void HarixKernel::runLuaFile(const char* filePath)
             return;
         }
 
-        // Se só existe o .luac de produção, usa ele
         if (hasLuacProd && !hasLua && !hasLuacBin)
         {
             luacPath = prodLuac;
@@ -552,7 +579,27 @@ void HarixKernel::runLuaFile(const char* filePath)
         }
 
         // ------------------------------------------------------------
-        // 4) Fallback para fonte
+        // 4) TELA DE LOADING
+        //    - conta arquivos .lua no app
+        //    - registra callback no ModuleCache
+        // ------------------------------------------------------------
+        int totalFiles = countLuaFilesRecursive(appDirectory);
+        if (totalFiles <= 0) totalFiles = 1;   // pelo menos o main
+
+        Serial.printf("[Loading] Total de módulos: %d\n", totalFiles);
+
+        LoadingScreen::begin("Carregando app");
+        LoadingScreen::setProgress(0, totalFiles);
+
+        ModuleCache::setProgressTotal(totalFiles);
+        ModuleCache::setProgressCallback(
+            [](const char* action, const char* name, int cur, int total) {
+                LoadingScreen::setStatus(action, name);
+                LoadingScreen::setProgress(cur, total);
+            });
+
+        // ------------------------------------------------------------
+        // 5) Fallback para fonte
         // ------------------------------------------------------------
         int  rc     = LUA_OK;
         bool loaded = false;
@@ -570,7 +617,7 @@ void HarixKernel::runLuaFile(const char* filePath)
         };
 
         // ------------------------------------------------------------
-        // 5) Decide: recompilar / usar cache / só bytecode
+        // 6) Decide: recompilar / usar cache / só bytecode
         // ------------------------------------------------------------
         bool needCompile = false;
 
@@ -592,6 +639,13 @@ void HarixKernel::runLuaFile(const char* filePath)
             Serial.println("Loading bytecode directly...");
         }
 
+        // Reporta o estado inicial para a tela de loading
+        LoadingScreen::setStatus(
+            needCompile ? "Compilando" :
+            (hasLuacBin ? "Carregando" : "Lendo"),
+            "main");
+        LoadingScreen::setProgress(1, totalFiles);
+
         if (needCompile)
         {
             if (ModuleCache::compileToLuac(L, luaPath, luacPath))
@@ -608,7 +662,6 @@ void HarixKernel::runLuaFile(const char* filePath)
             loaded = ModuleCache::loadLuac(L, luacPath);
             if (!loaded && hasLua)
             {
-                // .luac corrompido → tenta fonte
                 fallbackToSource();
             }
         }
@@ -619,6 +672,10 @@ void HarixKernel::runLuaFile(const char* filePath)
 
         if (!loaded)
         {
+            LoadingScreen::setStatus("Erro ao carregar", "main");
+            LoadingScreen::end();
+            ModuleCache::setProgressCallback(nullptr);
+
             if (rc != LUA_OK)
                 checkLuaError(L, rc);
             else
@@ -630,9 +687,18 @@ void HarixKernel::runLuaFile(const char* filePath)
         }
 
         // ------------------------------------------------------------
-        // 6) Executa
+        // 7) Executa o main.lua
         // ------------------------------------------------------------
+        LoadingScreen::setStatus("Executando", "main");
+        LoadingScreen::setProgress(totalFiles, totalFiles);
+
         rc = lua_pcall(L, 0, LUA_MULTRET, 0);
+
+        // Encerra a tela de loading ANTES de rodar checkLuaError,
+        // porque checkLuaError pode querer desenhar uma tela de exceção
+        LoadingScreen::end();
+        ModuleCache::setProgressCallback(nullptr);
+
         checkLuaError(L, rc);
 
         lua_close(L);
